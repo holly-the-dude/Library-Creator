@@ -2,6 +2,8 @@
 
 **Your personal, portable digital library — in a box.**
 
+[![Donate](https://img.shields.io/badge/Donate-PayPal-blue?logo=paypal)](https://www.paypal.com/ncp/payment/T8MGW39TXCR4J)
+
 Library-Creator turns a Raspberry Pi into a self-contained knowledge station: your own
 little library that fits in the palm of your hand (it doesn't *run* from your hand — that
 would just be dumb). It hosts its own WiFi network and serves Wikipedia, a music and
@@ -115,3 +117,9 @@ requirements are in the [Installation Guide](docs/INSTALL.md).
 We like things clean and simple. A Library device doesn't track you, doesn't use cookies,
 and doesn't phone home — it's a straightforward experience, just like the internet used to
 be. Your library is *yours*.
+
+---
+
+## Support
+
+If Library-Creator is useful to you, consider [supporting development via PayPal](https://www.paypal.com/ncp/payment/T8MGW39TXCR4J). Thank you!
