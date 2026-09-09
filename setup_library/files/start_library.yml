@@ -1,0 +1,1177 @@
+---
+###############################################################################
+# start_library.yml
+#
+# PURPOSE
+#   Boot-time orchestration playbook for the "Library" offline media appliance.
+#   It brings the box from a freshly powered-on state up to a fully running
+#   set of Podman containers that serve the library's content (Wi-Fi hotspot,
+#   offline Wikipedia/Kiwix, offline maps, music streaming, e-book library and
+#   the main web front-end).
+#
+#   The playbook is intended to run on the appliance itself (hosts: localhost)
+#   and drives an attached status display via the `displayit <image>.jpg`
+#   helper so the end user sees progress screens while everything starts.
+#
+# HIGH-LEVEL FLOW
+#   1. Connectivity / sanity check.
+#   2. Detect and mount the "Library_USB" storage device (format it if the USB
+#      is present but unformatted, and wait for it to be inserted if missing).
+#   3. Start the hotspot container (provides the Wi-Fi network).
+#   4. Conditionally start each content service ONLY if its data exists:
+#        - Wiki   (Kiwix / .zim files under /Library/wiki)
+#        - Maps   (tiles under /Library/maps)
+#        - Music  (media under /Library/music, LMS database in /Library/.music_data)
+#        - E-books (Calibre-Web, library under /Library/calibre)
+#        - Web    (main library web server, content under /Library/library)
+#   5. Each service is verified with a curl/health check where possible and a
+#      corresponding status image is shown on success or failure.
+#
+# KEY CONVENTIONS
+#   - Nearly every task shells out; stdout is captured in a `register` var and
+#     the string "found"/"present"/"absent"/"Running"/"Stopped"/"exist" is used
+#     as a simple state flag consumed by `when:` conditions on later tasks.
+#   - `displayit <image>` updates the physical status screen.
+#   - Containers are launched with `podman run` on the host network / default
+#     Podman bridge (10.88.0.0/24) with fixed IPs per service.
+#   - Long `until/retries/delay` loops are used to wait for hardware (USB) and
+#     for services to become healthy.
+#
+# DATA / IP LAYOUT (Podman bridge)
+#   wiki           10.88.0.200  :6902
+#   www (library)  10.88.0.201  :80
+#   music          10.88.0.210  :9099 -> container 5082
+#   ebook (calibre)10.88.0.211  :8083
+#   maps           10.88.0.212  :8080   (NOTE: shares .212 with the calibre
+#                                        "add new books" one-shot container)
+#   graphhopper    10.88.0.213  :8989   (maps routing; reached via maps /api/route)
+#
+# NOTE ON MODULE NAMES
+#   All task modules use Fully Qualified Collection Names (FQCN), e.g.
+#   `ansible.builtin.shell` instead of `shell`.
+###############################################################################
+
+- name: Start Library
+  hosts: localhost
+  gather_facts: false
+  vars:
+    # Hostname/target label for the appliance.
+    target_ip: library
+
+    # Container images expected to be available locally (loaded from these tars).
+    podman_images:
+      - hotspot.tar
+      - rasbase.tar
+      - webserver.tar
+      - wiki.tar
+      - music.tar
+      - calibre-web.tar
+
+    # Connection settings (run as root over SSH with a fixed key, host key
+    # checking disabled because this targets a known appliance).
+    ansible_user: root
+    ansible_become_user: root
+    ansible_ssh_private_key_file: /root/.ssh/id_rsa
+    ansible_ssh_common_args: "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+
+  tasks:
+    # ---------------------------------------------------------------------
+    # Show the initial "library starting" splash screen.
+    # ---------------------------------------------------------------------
+    - name: start message
+      ansible.builtin.shell: |
+        sleep 2
+        displayit library_starting.jpg
+        sleep 2
+      become: true
+
+    # ---------------------------------------------------------------------
+    # Basic connectivity / identity check (who am I and where am I running).
+    # Uses `raw` so it works even before Python facts are gathered.
+    # ---------------------------------------------------------------------
+    - name: test connect
+      ansible.builtin.raw: |
+        whoami
+        hostname
+        # df -h
+      register: whowhatwhere
+      tags: runthis
+
+    - name: show results
+      ansible.builtin.debug:
+        msg:
+          - "{{ whowhatwhere }}"
+      tags: runthis
+    ##########################################################
+    # Is there a usb sd card inserted
+    ##########################################################
+    - name: see if a sd card has been inserted
+      shell: |
+        root_dev=$(findmnt -n -o SOURCE /)
+        boot_disk=$(lsblk -ndo PKNAME "$root_dev")
+
+        # If root itself is a whole disk rather than a partition
+        if [ -z "$boot_disk" ]; then
+            boot_disk=$(basename "$root_dev")
+        fi
+
+        boot_size=$(lsblk -bndo SIZE "/dev/$boot_disk")
+
+        matching_disk=$(
+            lsblk -bndo NAME,SIZE,TYPE |
+            awk -v size="$boot_size" -v boot="$boot_disk" '
+            $3 == "disk" && $1 != boot {
+                diff = $2 - size
+                if (diff < 0) diff = -diff
+
+                # Within 10% of boot drive size
+                if (diff <= size * 0.10)
+                    print "/dev/" $1
+            }' |
+            head -n 1
+        )
+
+        echo "$matching_disk"
+      become: true
+      register: checkdrive
+
+    - debug: var=checkdrive.stdout
+
+    - name: set fact do drive
+      set_fact:
+        sdcard: "{{ checkdrive.stdout }}"
+
+    - name: sd card inserted block
+      when: '"sd" in sdcard'
+      block:
+      - name: sleep for 1 minute
+        shell: |
+          displayit 66_1_dup_sd.jpg
+          sleep 30
+        become: true
+
+      - name: start the process
+        shell: |
+          displayit 66_2_dup_sd.jpg
+          /usr/bin/podman ps |grep -v CONTAINER|awk '{print "podman stop "$1}'|sh
+          /usr/bin/podman ps |grep -v CONTAINER|awk '{print "podman stop "$1}'|sh
+          exit 0
+        become: true
+        ignore_errors: true
+
+      - name: dd image card block
+        block:
+          - name: clone the card (file-level, fits smaller destinations)
+            shell: |
+              set -euo pipefail
+              displayit dup_10_checking.jpg
+
+              SRC_DISK=/dev/mmcblk0
+              SRC_BOOT=/dev/mmcblk0p1
+              SRC_ROOT=/dev/mmcblk0p2
+              DST_DISK={{ sdcard }}
+
+              # ---- Derive destination partition names --------------------
+              # nvme/mmc style devices need a 'p' separator (e.g. sda1 vs mmcblk0p1)
+              case "$DST_DISK" in
+                *[0-9]) P="p" ;;   # ends in a digit -> needs p separator
+                *)      P=""  ;;
+              esac
+              DST_BOOT="${DST_DISK}${P}1"
+              DST_ROOT="${DST_DISK}${P}2"
+
+              # ---- Safety: make sure the USED data will fit --------------
+              # partclone/dd copy the whole 30G; rsync copies only used files,
+              # so we only need the destination to hold the used bytes + margin.
+              SRC_DISK_BYTES=$(blockdev --getsize64 "$SRC_DISK")
+              DST_DISK_BYTES=$(blockdev --getsize64 "$DST_DISK")
+
+              BOOT_USED=$(df -B1 --output=used /boot/firmware | tail -1 | tr -d ' ')
+              ROOT_USED=$(df -B1 --output=used /               | tail -1 | tr -d ' ')
+
+              # Fixed 512MiB boot partition (matches source layout).
+              BOOT_SIZE=$((512 * 1024 * 1024))
+              # 20% headroom on root data + 1GiB absolute floor for fs overhead.
+              NEED=$((BOOT_SIZE + ROOT_USED + ROOT_USED / 5 + 1024 * 1024 * 1024 + 64 * 1024 * 1024))
+
+              echo "Source disk : $SRC_DISK_BYTES bytes"
+              echo "Dest   disk : $DST_DISK_BYTES bytes"
+              echo "Boot used   : $BOOT_USED bytes"
+              echo "Root used   : $ROOT_USED bytes"
+              echo "Required    : $NEED bytes"
+
+              if [ "$DST_DISK_BYTES" -lt "$NEED" ]; then
+                echo "ERROR: destination $DST_DISK is too small for the used data" >&2
+                exit 1
+              fi
+
+              # ---- Unmount any existing dest partitions ------------------
+              displayit dup_20_partition.jpg
+              for part in "${DST_DISK}"*; do
+                umount "$part" 2>/dev/null || true
+              done
+
+              # ---- Recreate partition table -------------------------------
+              # Preserve the SAME dos disk label-id (0xc88f36e7) so PARTUUIDs
+              # match the source -> cmdline.txt / fstab need no editing and the
+              # clone boots unmodified. Boot = 512MiB FAT (type c), root fills
+              # the remaining space of THIS (possibly smaller) card (type 83).
+              BOOT_START=16384          # sectors (same as source)
+              BOOT_SECTORS=1048576      # 512MiB in 512B sectors (same as source)
+              ROOT_START=$((BOOT_START + BOOT_SECTORS))
+
+              # Build the sfdisk script via printf (avoids heredoc terminator
+              # column issues when this block scalar is re-indented by Ansible).
+              printf '%s\n' \
+                "label: dos" \
+                "label-id: 0xc88f36e7" \
+                "unit: sectors" \
+                "${DST_BOOT} : start=${BOOT_START}, size=${BOOT_SECTORS}, type=c" \
+                "${DST_ROOT} : start=${ROOT_START}, type=83" \
+                | sfdisk "$DST_DISK"
+
+              partprobe "$DST_DISK" || true
+              udevadm settle || true
+              sleep 3
+
+              # ---- Make filesystems (labels copied from source) -----------
+              displayit dup_30_format.jpg
+              BOOT_LABEL=$(blkid -s LABEL -o value "$SRC_BOOT" || echo bootfs)
+              ROOT_LABEL=$(blkid -s LABEL -o value "$SRC_ROOT" || echo rootfs)
+
+              mkfs.vfat -F 32 -n "${BOOT_LABEL:-bootfs}" "$DST_BOOT"
+              mkfs.ext4 -F -L "${ROOT_LABEL:-rootfs}" "$DST_ROOT"
+
+              # ---- Mount and rsync ---------------------------------------
+              MNT=$(mktemp -d)
+              mount "$DST_ROOT" "$MNT"
+              mkdir -p "$MNT/boot/firmware"
+              mount "$DST_BOOT" "$MNT/boot/firmware"
+
+              # Copy root filesystem. Exclude pseudo/volatile fs and the mount
+              # point of the destination itself. -x keeps us on the root fs so
+              # /boot/firmware is handled by its own rsync below.
+              displayit dup_40_copy_root.jpg
+              rsync -aHAXx --info=progress2 --delete \
+                --exclude='/dev/*' \
+                --exclude='/proc/*' \
+                --exclude='/sys/*' \
+                --exclude='/run/*' \
+                --exclude='/tmp/*' \
+                --exclude='/mnt/*' \
+                --exclude='/media/*' \
+                --exclude='/lost+found' \
+                --exclude="$MNT" \
+                / "$MNT/"
+
+              # Copy the boot partition contents.
+              displayit dup_50_copy_boot.jpg
+              rsync -aHAXx --info=progress2 --delete \
+                /boot/firmware/ "$MNT/boot/firmware/"
+
+              # Recreate excluded mount-point dirs so the clone boots cleanly.
+              mkdir -p "$MNT"/{dev,proc,sys,run,tmp,mnt,media}
+              chmod 1777 "$MNT/tmp"
+
+              sync
+
+              # ---- Unmount and check/grow root fs -------------------------
+              displayit dup_60_finalize.jpg
+              umount "$MNT/boot/firmware"
+              umount "$MNT"
+              rmdir "$MNT"
+
+              e2fsck -f -y "$DST_ROOT" || true
+              resize2fs "$DST_ROOT"    # grow ext4 to fill its partition
+              sync
+            become: true
+          - name: we finished
+            shell: |
+              displayit 66_3_dup_sd_good.jpg
+            become: true
+
+          - name: see if a sd card has been removed
+            shell: |
+              lsblk -J | /usr/bin/jq -r '.blockdevices[]|[.name,.size]|@csv'|awk -F, '{print $1,$2}'|uniq --skip-fields=1 -d |awk -F\" '{print $2}'
+            become: true
+            register: checkdrive
+            ignore_errors: true
+            until: '"sd" not in checkdrive.stdout'
+            retries: 43000
+            delay: 5
+
+          - name: reboot 
+            shell: |
+              shutdown -r now
+            become: true 
+        rescue:
+          - name: we failed
+            shell: |
+              displayit 66_3_dup_sd_fail.jpg
+              sleep 30
+              /usr/local/bin/library_shutdown
+            become: true
+
+    ##########################################################
+    # Detect the Library USB storage device and mount it.
+    # If the USB is missing we wait (and optionally format a
+    # blank disk that gets inserted) until it appears.
+    ##########################################################
+
+    # Enumerate block devices as JSON so we can query by filesystem label.
+    - name: get usb devices
+      ansible.builtin.shell: |
+        lsblk --json -i -o NAME,FSTYPE,LABEL
+      become: true
+      register: usbdev
+
+    # If a device labelled "Library_USB" exists, extract its device name.
+    - name: set fact to usb
+      when: 'usbdev is search("Library_USB")'
+      ansible.builtin.set_fact:
+        usbdisk: "{{ ([(usbdev.stdout|from_json)]|json_query('[*].blockdevices[*].children[?label==`Library_USB`].name') |flatten)[0] }}"
+
+    # Otherwise flag the disk as "Missing" for the waiting logic below.
+    - name: set fact to usb missing
+      when: 'usbdev is not search("Library_USB")'
+      ansible.builtin.set_fact:
+        usbdisk: "Missing"
+
+    # Debug: show resolved disk name and the raw matched device list.
+    - name: show resolved usb disk
+      ansible.builtin.debug:
+        msg:
+        - "{{ usbdisk }}"
+        - "{{ [(usbdev.stdout|from_json)]|json_query('[*].blockdevices[*].children[?label==`Library_USB`]') |flatten }}"
+
+    # If the USB is missing, show the "insert USB" screen.
+    - name: show missing
+      when: '"Missing" in usbdisk'
+      ansible.builtin.shell: |
+        displayit usb_missing_verbose.jpg
+      register: shellit
+      become: true
+
+    - name: debug show missing result
+      ansible.builtin.debug:
+        var: shellit
+
+    # Block that runs only when the USB was not present at boot: it loops
+    # until a "Library_USB" labelled device appears. If an UNLABELLED disk is
+    # inserted, it is formatted exFAT, labelled Library_USB, mounted at
+    # /Library and seeded with the expected folder structure + ReadMe.
+    - name: Wait till inserted block
+      when: '"Missing" in usbdisk'
+      block:
+      - name: Wait till inserted
+        ansible.builtin.shell: |
+          lsblk -i -o NAME,FSTYPE,LABEL|grep Library_USB && echo found || echo Missing
+          displayit usb_missing_verbose.jpg
+          ################ format if not there
+          DEVICE=`fdisk -l|grep sd|grep -v :|awk '{print $1}'`
+          LIBR=`lsblk -i -o NAME,FSTYPE,LABEL|grep Library_USB|awk '{print $3}'`
+          if [ "$DEVICE" != "" ]; then
+            echo "Check if Library_USB was inserted by accident and don't format"
+            echo $LIBR
+            if [ "$LIBR" != "Library_USB" ]; then
+              lsblk -o NAME,FSTYPE,LABEL,SIZE,MOUNTPOINT|grep sd
+              mkfs.exfat -n Library_USB $DEVICE
+              mount $DEVICE /Library
+              sleep 5
+              cd /Library
+              tar xvzf /root/Library-Creator/setup_library/files/Library_USB.tar
+              cd /Library/wiki
+              ./getwiki.sh
+            fi
+          fi
+        register: waitshell
+        ignore_errors: true
+        until: '"found" in waitshell.stdout'
+        delay: 5
+        retries: 1000
+        become: true
+
+      # Once found, switch back to the "starting" splash.
+      - name: show starting
+        when: '"found" in waitshell.stdout'
+        ansible.builtin.shell: |
+          displayit library_starting.jpg
+        register: shellit
+        become: true
+
+    # Mount the detected Library_USB (exFAT) at /Library.
+    - name: mount the usb
+      ansible.builtin.shell: |
+        mount -t exfat /dev/{{ usbdisk }} /Library
+        df -h /Library
+      register: shellmount
+      become: true
+
+    - name: debug show mount result
+      ansible.builtin.debug:
+        var: shellmount.stdout_lines
+
+    # Defensive: recreate the standard content folders in case they were
+    # deleted or renamed. Errors are ignored (folders may already exist).
+    - name: force create incase some idiot deleted the folders or renamed
+      ansible.builtin.shell: |
+        mkdir /Library/library 2>/dev/null
+        mkdir /Library/web 2>/dev/null
+        mkdir /Library/wiki 2>/dev/null
+        mkdir /Library/music 2>/dev/null
+      register: shellmd
+      ignore_errors: true
+      become: true
+
+    - name: debug show folder create result
+      ansible.builtin.debug:
+        var: shellmd.stdout_lines
+##############################################################
+    ##############################
+    # Start Containers
+    ##################
+
+    ###############################
+    # HOTSPOT CONTAINER
+    # Provides the Wi-Fi access point clients connect to. Always started.
+    ###############################
+    - name: start hotspot message
+      ansible.builtin.shell: |
+        sleep 2
+        displayit start_01_hotspot.jpg
+        sleep 2
+      become: true
+
+    # Determine whether the hotspot container is already running.
+    - name: see if hotspot container is running
+      ansible.builtin.shell: |
+        podman ps |grep hotspot >/dev/null && echo Running || echo Stopped
+      register: hotspot
+      become: true
+
+    - name: debug show hotspot state
+      ansible.builtin.debug:
+        var: hotspot
+
+    # Start the hotspot container (host networking, privileged for USB Wi-Fi
+    # adapter access) only if it is currently stopped.
+    - name: start hotspot container
+      when: '"Stopped" in hotspot.stdout'
+      ansible.builtin.shell: |
+        podman run -d --net=host \
+        --privileged -w /root \
+        -v /dev/bus/usb:/dev/bus/usb localhost/hotspot /bin/sh -c "/usr/bin/python3 /root/hotspot.py; sleep infinity"
+        sleep 5
+        podman ps -a |tail -n1|awk '{print "podman logs "$1}'|sh
+      register: starthotspot
+      become: true
+
+    - name: show startup of hotspot
+      when: '"Stopped" in hotspot.stdout'
+      ansible.builtin.debug:
+        var: starthotspot.stdout_lines
+
+    - name: hotspot message
+      ansible.builtin.shell: |
+        sleep 2
+        displayit start_02_hotspot.jpg
+        sleep 2
+      become: true
+
+    ###############################
+    # WIKI (Kiwix) — started only if .zim content is present.
+    # First (re)builds wiki.xml if there are more .zim files than entries in
+    # the existing library, then serves it via kiwix-serve on :6902.
+    ###############################
+    - name: see if wiki is there if not dont start
+      ansible.builtin.shell: |
+        test -f /Library/wiki/wiki.xml && echo exist || echo absent
+        ZIMS=`ls /Library/wiki/*.zim |wc -l`
+        ZIMXML=`cat /Library/wiki/wiki.xml |grep -c -oP 'path="\K[^"]*'`
+        if [ "$ZIMS" -gt "$ZIMXML" ]; then
+          echo absent
+        fi
+      register: wiki_exist
+
+    - name: debug show wiki_exist
+      ansible.builtin.debug:
+        var: wiki_exist.stdout
+
+    # If the wiki library is missing/out of date, (re)generate wiki.xml from
+    # every .zim file found.
+    - name: see if zim file is there
+      when: '"absent" in wiki_exist.stdout'
+      block:
+        - name: look for zim files
+          ansible.builtin.shell: |
+            ls /Library/wiki/*.zim |grep zim -c && echo "zims" || echo "nothing"
+          register: zims
+
+        - name: creating wiki xml
+          ansible.builtin.shell: |
+            sleep 2
+            displayit start_03_create_wiki.jpg
+            sleep 2
+          become: true
+
+        - name: create wiki.xml
+          when: '"zim" in zims.stdout'
+          ansible.builtin.shell: |
+            CWIKI=`ls /Library/wiki/*.zim |sed -z 's/\n/ /g' |awk '{print "kiwix-manage /Library/wiki/wiki.xml add "$0}'`
+            podman run --privileged -v /Library/wiki:/Library/wiki localhost/wiki /bin/sh -c "$CWIKI"
+          register: cwiki
+
+        - name: debug show cwiki
+          ansible.builtin.debug:
+            var: cwiki
+
+    # Re-check for wiki.xml after the potential rebuild above.
+    - name: see if wiki is there if not dont start
+      ansible.builtin.shell: |
+        test -f /Library/wiki/wiki.xml && echo exist || echo absent
+      register: wiki_exist
+
+    # If still absent, show the "wiki missing" screen and skip starting it.
+    - name: start wiki block
+      when: '"absent" in wiki_exist.stdout'
+      block:
+      - name: wiki missing
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_05_wiki_missing.jpg
+          sleep 2
+        become: true
+
+    # Otherwise start (or reuse) the wiki container and verify it responds.
+    - name: start wiki block
+      when: '"absent" not in wiki_exist.stdout'
+      block:
+      - name: starting wiki
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_03_starting_wiki.jpg
+          sleep 2
+        become: true
+
+      - name: see if wiki container is running
+        ansible.builtin.shell: |
+          podman ps |grep wiki >/dev/null && echo Running || echo Stopped
+        register: wiki
+        become: true
+
+      - name: debug show wiki state
+        ansible.builtin.debug:
+          var: wiki
+
+      # Serve the Kiwix library on 10.88.0.200:6902 if not already running.
+      - name: start wiki container
+        when: '"Stopped" in wiki.stdout'
+        ansible.builtin.shell: |
+          podman run -d --name wiki --ip 10.88.0.200 --privileged \
+          --restart=always --replace \
+          -v /Library/wiki:/wiki -p 6902:6902 \
+          localhost/wiki /bin/sh -c \
+          "kiwix-serve -v -p 6902 --nodatealiases --library /wiki/wiki.xml"
+
+
+        register: startwiki
+        become: true
+
+      - name: show startup of wiki
+        when: '"Stopped" in wiki.stdout'
+        ansible.builtin.debug:
+          var: startwiki.stdout_lines
+
+      # Health check: poll the wiki landing page until it serves content.
+      - name: verify wiki started
+        ansible.builtin.shell: |
+          curl -s localhost:6902 |grep -E 'Welcome|Wikipedia'  && echo "started"  || echo "failed"
+        register: wikiverify
+        ignore_errors: true
+        until: '"started" in wikiverify.stdout'
+        retries: 4
+        delay: 30
+
+      - name: set fact for wikiverify true
+        when: '"started" in wikiverify.stdout'
+        ansible.builtin.set_fact:
+          wikiexist: true
+      - name: set fact for wikiexist false
+        when: '"failed" in wikiverify.stdout'
+        ansible.builtin.set_fact:
+          wikiexist: false
+
+      - name: starting wiki
+        when: wikiexist
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_04_starting_wiki.jpg
+          sleep 2
+        become: true
+
+      - name: starting wiki failed
+        when: not wikiexist
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_05_wiki_failed.jpg
+          sleep 2
+        become: true
+
+    ###############################
+    # MAPS — started only if tiles exist under /Library/maps.
+    # Serves the offline maps UI on 10.88.0.212:8080.
+    #
+    # Optional car routing: if a routing extract exists at
+    # /Library/maps/osm/region.osm.pbf we also start a GraphHopper container
+    # (10.88.0.213:8989). The maps web container reaches it by the hostname
+    # "graphhopper" (used in nginx.conf as the /api/route upstream). We always
+    # pass --add-host graphhopper:10.88.0.213 to the web container so nginx can
+    # resolve that upstream name at startup even when routing is disabled — in
+    # that case /api/route simply returns 502 until GraphHopper is present.
+    ###############################
+    - name: see if maps is there if not dont start
+      ansible.builtin.shell: |
+        C=`ls /Library/maps/* |wc -l`
+        if [ "$C" -gt "0" ]; then
+          echo present
+        fi
+        if [ "$C" -eq "0" ]; then
+          echo absent
+        fi
+      register: maps_exist
+
+    - name: debug show maps_exist
+      ansible.builtin.debug:
+        var: maps_exist.stdout
+
+    # Detect the optional routing extract. Routing is only started when this
+    # file is present, so a maps-only build (no OSM extract) still works.
+    - name: see if routing extract exists
+      ansible.builtin.shell: |
+        test -f /Library/maps/osm/region.osm.pbf && echo present || echo absent
+      register: routing_exist
+
+    - name: debug show routing_exist
+      ansible.builtin.debug:
+        var: routing_exist.stdout
+
+    - name: start maps
+      when:
+        - '"present" in maps_exist.stdout'
+      block:
+        # ---- Clear the routing graph cache ONLY when the OSM extract is newer
+        #      than the previously-built graph. GraphHopper writes a
+        #      "properties" file when an import completes; if region.osm.pbf is
+        #      newer than that file (i.e. the user swapped in a new extract),
+        #      the stale graph must be removed so GraphHopper re-imports.
+        #      Doing this unconditionally would force a slow re-import on every
+        #      boot, so we gate it on the timestamp comparison.
+        - name: clear routing cache if the OSM extract is newer than the graph
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.shell: |
+            PBF=/Library/maps/osm/region.osm.pbf
+            CACHE=/Library/maps/graph-cache
+            STAMP="$CACHE/properties"
+            if [ ! -f "$STAMP" ]; then
+              # No completed import yet: ensure a clean cache dir and import.
+              mkdir -p "$CACHE"
+              rm -rf "${CACHE:?}/"* 2>/dev/null || true
+              echo "no prior graph - will import"
+            elif [ "$PBF" -nt "$STAMP" ]; then
+              # New extract is newer than the built graph: purge and re-import.
+              echo "stopping graphhopper to clear stale graph"
+              podman stop graphhopper 2>/dev/null || true
+              podman rm -f graphhopper 2>/dev/null || true
+              rm -rf "${CACHE:?}/"* 2>/dev/null || true
+              echo "cleared stale graph - will re-import"
+            else
+              echo "graph is up to date - reuse"
+            fi
+          register: ghcache
+          become: true
+
+        - name: debug show routing cache decision
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.debug:
+            var: ghcache.stdout_lines
+
+        # ---- Optional GraphHopper routing engine (start before the web UI so
+        #      the nginx upstream is reachable as soon as the web container
+        #      comes up). Gated on the routing extract being present.
+        - name: show building routing splash
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.shell: |
+            displayit start_09_building_routing.jpg
+          become: true
+
+        - name: start graphhopper routing engine
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.shell: |
+            podman run -d --name graphhopper --ip 10.88.0.213 --replace --privileged \
+              --restart unless-stopped \
+              -e JAVA_OPTS="-Xms512m -Xmx3g" \
+              -v /Library/maps/osm:/data/osm:ro \
+              -v /Library/maps/graph-cache:/data/graph-cache \
+              localhost/library_maps-graphhopper:11
+          register: ghstart
+
+        - name: debug show graphhopper start
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.debug:
+            var: ghstart
+
+        # GraphHopper imports the PBF and builds its routing graph on first
+        # start, which can take minutes for a state-sized extract. Wait until
+        # the routing API answers a real request before continuing. A ready
+        # engine returns JSON containing "paths"; while importing the port is
+        # refused/500, so we retry.
+        - name: wait till graphhopper routing is ready
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.shell: |
+            curl -s "http://10.88.0.213:8989/route?point=39.7392,-104.9903&point=39.5501,-105.7821&profile=car&points_encoded=false" | grep -q '"paths"' && echo ready || echo notready
+          register: ghwait
+          ignore_errors: true
+          until: '"ready" in ghwait.stdout'
+          retries: 40
+          delay: 15
+
+        - name: show routing ready splash
+          when:
+            - '"present" in routing_exist.stdout'
+            - '"ready" in ghwait.stdout'
+          ansible.builtin.shell: |
+            displayit start_09_routing_ready.jpg
+          become: true
+
+        - name: show routing failed splash
+          when:
+            - '"present" in routing_exist.stdout'
+            - '"ready" not in ghwait.stdout'
+          ansible.builtin.shell: |
+            displayit start_09_routing_failed.jpg
+          become: true
+
+        - name: show starting maps splash
+          ansible.builtin.shell: |
+            displayit start_08_starting_maps.jpg
+          become: true
+
+        - name: start maps
+          ansible.builtin.shell: |
+            podman run -d --name library_maps --ip 10.88.0.212 --replace --privileged --restart unless-stopped \
+              --add-host graphhopper:10.88.0.213 \
+              -p 8080:8080 -v /Library/maps:/storage/maps localhost/library_maps:latest
+          register: mapsstart
+
+        - name: debug show mapsstart
+          ansible.builtin.debug:
+            var: mapsstart
+
+        - name: wait till maps started
+          ansible.builtin.shell: |
+            curl -s localhost:8080 | grep -i 'Library Maps'
+          register: mapswait
+          ignore_errors: true
+          until: '"Library Maps" in mapswait.stdout'
+          retries: 8
+          delay: 15
+
+        # Confirm end-to-end routing through the web container's /api/route
+        # proxy (only when routing was started). Non-fatal: the viewer works
+        # regardless of routing.
+        - name: verify routing through the maps proxy
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.shell: |
+            curl -s "http://localhost:8080/api/route?point=39.7392,-104.9903&point=39.5501,-105.7821&profile=car&points_encoded=false" | grep -q '"paths"' && echo routing_ok || echo routing_unavailable
+          register: routingverify
+          ignore_errors: true
+
+        - name: debug show routing verify
+          when: '"present" in routing_exist.stdout'
+          ansible.builtin.debug:
+            var: routingverify.stdout
+
+        # Final maps splash. Distinguish "routing available" from a maps-only
+        # build so the user knows whether directions will work.
+        - name: show maps started splash (with routing)
+          when:
+            - '"Library Maps" in mapswait.stdout'
+            - '"present" in routing_exist.stdout'
+            - '"routing_ok" in (routingverify.stdout | default(""))'
+          ansible.builtin.shell: |
+            displayit start_08_maps_started.jpg
+          become: true
+
+        - name: show maps ready no-routing splash
+          when:
+            - '"Library Maps" in mapswait.stdout'
+            - '"present" not in routing_exist.stdout or "routing_ok" not in (routingverify.stdout | default(""))'
+          ansible.builtin.shell: |
+            displayit start_09_routing_off.jpg
+          become: true
+
+    ###############################
+    # MUSIC (LMS) — started only if media exists under /Library/music.
+    # Restores a default LMS data set from a tar the first time, then serves
+    # on 10.88.0.210:9099 (container port 5082).
+    ###############################
+    - name: see if music is there if not dont start
+      ansible.builtin.shell: |
+        C=`ls /Library/music/* |wc -l`
+        if [ "$C" -gt "0" ]; then
+          echo present
+        fi
+        if [ "$C" -eq "0" ]; then
+          echo absent
+        fi
+      register: music_exist
+
+    - name: debug show music_exist
+      ansible.builtin.debug:
+        var: music_exist.stdout
+
+    - name: see if music database  file is there
+      when: '"present" in music_exist.stdout'
+      block:
+        # Check whether the LMS data directory already exists.
+        - name: look for database files
+          ansible.builtin.shell: |
+            ls /Library/.music_data 2>/dev/null && echo exists || echo does_not_exist
+          register: musicdb
+
+        - name: creating musicdb
+          ansible.builtin.shell: |
+            sleep 2
+            displayit start_035_music.jpg
+            sleep 2
+          become: true
+
+        # First-run: extract the bundled default music data.
+        - name: create music db
+          when: '"does_not_exist" in musicdb.stdout'
+          ansible.builtin.shell: |
+            cd /
+            tar xvf /root/install/setup_library/files/music_default_data.tar
+            echo "extracted"
+          register: musicdbinstall
+
+        # Start the music container once media + data are confirmed present.
+        - name: start music
+          when:
+            - '"present" in music_exist.stdout'
+            - '"exists" in musicdb.stdout or "extracted" in musicdbinstall.stdout'
+          block:
+            - name: start music
+              ansible.builtin.shell: |
+                podman volume rm --all --force
+                podman run -d --restart unless-stopped --ip 10.88.0.210 --name=music --user 0 --privileged -p 9099:5082 -v /Library/music/:/music/:ro -v /Library/.music_data:/var/lms  music:latest
+              register: musicstart
+
+            - name: debug show musicstart
+              ansible.builtin.debug:
+                var: musicstart
+
+            # Health check: expect a 404 from the root path once LMS is up.
+            - name: wait till started
+              ansible.builtin.shell: |
+                curl -s http://10.1.1.1:9099|grep '404'
+              register: musicwait
+              ignore_errors: true
+              until: '"404" in musicwait.stdout'
+              retries: 8
+              delay: 15
+
+            - name: music started
+              ansible.builtin.shell: |
+                sleep 2
+                displayit start_035_music_started.jpg
+                sleep 2
+              become: true
+
+    ###############################
+    # E-BOOKS (Calibre-Web) — started only if /Library/calibre has content.
+    # Restores the calibre database from tar on first run, ingests any new
+    # books dropped in put_new_books_here, then serves on 10.88.0.211:8083.
+    ###############################
+    - name: see if ebook folder is there
+      ansible.builtin.shell: |
+        C=`ls /Library/calibre |wc -l`
+        if [ "$C" -gt "0" ]; then
+          echo present
+        fi
+        if [ "$C" -eq "0" ]; then
+          echo absent
+        fi
+      register: ebook_exist
+
+    # First-run restore of the calibre metadata database if the folder is empty.
+    - name: see if ebook  database  file is there if not create it
+      when: '"absent" in ebook_exist.stdout'
+      block:
+        - name: look for database files
+          ansible.builtin.shell: |
+            ls /Library/calibre/books/metadata.db 2>/dev/null && echo exists || echo does_not_exist
+          register: ebookdb
+
+        - name: create ebook  db
+          when: '"does_not_exist" in ebookdb.stdout'
+          ansible.builtin.shell: |
+            cd /
+            tar xvf /root/install/setup_library/files/calibre_database.tar
+            echo "extracted"
+          register: ebookdbinstall
+
+    # Re-check the folder after the potential tar restore above.
+    - name: see if ebook folder is there after tar restore
+      ansible.builtin.shell: |
+        C=`ls /Library/calibre |wc -l`
+        if [ "$C" -gt "0" ]; then
+          echo present
+        fi
+        if [ "$C" -eq "0" ]; then
+          echo absent
+        fi
+      register: ebook_exist
+
+    - name: see if ebook  database  file is there if not create it
+      when: '"present" in ebook_exist.stdout'
+      block:
+
+        - name: starting ebook display
+          ansible.builtin.shell: |
+            sleep 2
+            displayit starting_ebook.jpg
+            sleep 2
+          become: true
+
+        - name: start ebook
+          when:
+            - '"present" in ebook_exist.stdout'
+          block:
+            # Count any newly-dropped books awaiting import.
+            - name: check for new ebooks
+              ansible.builtin.shell: |
+                ls -l /Library/calibre/put_new_books_here/* |wc -l
+              register: newebooks
+
+            - name: new ebooks
+              when: 'newebooks.stdout|int > 0'
+              ansible.builtin.shell: |
+                displayit new_ebooks.jpg
+                sleep 2
+              become: true
+
+            # One-shot container: import new books into the calibre library,
+            # then remove them from the incoming folder.
+            - name: add new ebooks
+              when: 'newebooks.stdout|int > 0'
+              ansible.builtin.shell: |
+                podman run -d --user 0 --ip 10.88.0.212 --privileged -v /Library/calibre/books:/books:rw -v /Library/calibre/put_new_books_here:/incoming:rw localhost/calibre-web /bin/bash -c "calibredb  add --with-library=/books -r --automerge=overwrite /incoming/*; rm -rvf /incoming/*"
+
+            # Start the persistent Calibre-Web server on :8083.
+            - name: start ebook
+              ansible.builtin.shell: |
+                podman run -d --user 0 --restart unless-stopped --ip 10.88.0.211 --privileged -p 8083:8083  -v /Library/calibre/books:/books:rw  localhost/calibre-web /usr/local/bin/cps
+              register: ebookstart
+
+            - name: debug show ebookstart
+              ansible.builtin.debug:
+                var: ebookstart
+
+            # Health check: wait for the Calibre-Web landing page title.
+            - name: wait till started
+              ansible.builtin.shell: |
+                curl -s http://10.1.1.1:8083|grep '<title>Calibre-Web'
+              register: ebookwait
+              ignore_errors: true
+              until: '"<title>Calibre-Web" in ebookwait.stdout'
+              retries: 20
+              delay: 15
+
+            - name: ebook started
+              ansible.builtin.shell: |
+                sleep 2
+                displayit started_ebook.jpg
+                sleep 2
+              become: true
+
+    ###############################
+    # WEBSERVER (main library front-end) — started only if /Library/library
+    # exists. Serves on 10.88.0.201:80 and is the primary landing page.
+    ###############################
+    - name: see if webserver is there if not dont start
+      ansible.builtin.shell: |
+        test -d /Library/library && echo exist || echo absent
+      register: www_exist
+
+    # If the content folder is missing, show the "missing" screen and skip.
+    - name: start webserver block
+      when: '"exist" not in www_exist.stdout'
+      block:
+      - name: library folder missing
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_06_missing.jpg
+          sleep 2
+        become: true
+
+    # Otherwise start (or reuse) the webserver container and verify it builds
+    # and serves the site.
+    - name: start www block
+      when: '"exist" in www_exist.stdout'
+      block:
+      - name: starting webserver
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_06_starting_webserver.jpg
+          sleep 2
+        become: true
+
+      - name: see if www container is running
+        ansible.builtin.shell: |
+          podman ps |grep webserver >/dev/null && echo Running || echo Stopped
+        register: www
+        become: true
+
+      - name: debug show www state
+        ansible.builtin.debug:
+          var: www
+
+      # Launch the web server container (mounts entire /Library read/write,
+      # publishes port 80) if it is not already running.
+      - name: start www container
+        when: '"Stopped" in www.stdout'
+        ansible.builtin.shell: |
+          podman run -d -v /Library:/library \
+          -p 80:80 \
+          --ip 10.88.0.201  --privileged  \
+          localhost/webserver /bin/sh -c '/usr/bin/python3 /root/library.py;sleep infinity'
+        register: startwww
+        become: true
+
+      - name: show startup of www
+        when: '"Stopped" in www.stdout'
+        ansible.builtin.debug:
+          var: startwww.stdout_lines
+    #################################################
+      # Wait for the index page to start returning content (>10 lines).
+      - name: verify www started just index
+        ansible.builtin.shell: |
+          curl -s localhost|wc -l
+        register: wwwindex
+        ignore_errors: true
+        become: true
+        until: 'wwwindex.stdout|int > 10'
+        delay: 5
+        retries: 1000
+        # become: true
+
+      - name: library building files
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_06_building.jpg
+          sleep 2
+        become: true
+
+    #################################################
+
+      # Wait until the site is fully built (the "Shutdown" marker appears once).
+      - name: verify www started
+        ansible.builtin.shell: |
+          curl -s localhost|grep Shutdown -c
+        register: wwwverify
+        ignore_errors: true
+        until: '"1" in wwwverify.stdout'
+        delay: 5
+        retries: 1000
+        become: true
+
+      - name: library started
+        ansible.builtin.shell: |
+          sleep 2
+          displayit start_07_starting_webserver.jpg
+          sleep 2
+        become: true
+
+      # Final splash: everything is up.
+      - name: final message
+        ansible.builtin.shell: |
+          sleep 2
+          displayit library_main.jpg
+          sleep 2
+        become: true
+
+    ###############################
+    # HDMI DESKTOP MODE — if the user selected the "HDMI desktop" option in
+    # bootstrap (recorded in /root/.display_mode), start the labwc desktop
+    # for the 'pi' user via lightdm. labwc's autostart then opens chromium in
+    # kiosk mode to http://10.1.1.1. In all other display modes this is a
+    # no-op and the fbi status splash above remains on screen.
+    ###############################
+    - name: read selected display mode
+      ansible.builtin.shell: |
+        cat /root/.display_mode 2>/dev/null || echo none
+      register: display_mode
+      changed_when: false
+
+    - name: launch pi desktop (labwc) for kiosk browser
+      when: '"desktop" in display_mode.stdout'
+      ansible.builtin.shell: |
+        systemctl enable lightdm 2>/dev/null || true
+        # Start the greeter/autologin now if it is not already running so the
+        # desktop and kiosk browser come up at the end of startup.
+        systemctl is-active --quiet lightdm || systemctl restart lightdm
+        systemctl restart lightdm
+      become: true
+
+    ###############################
+    # DESKTOP WALLPAPER — in kiosk (desktop) mode, load library_main.jpg as
+    # the desktop background behind the chromium kiosk browser. The labwc
+    # autostart (written by bootstrap) already launches swaybg on login; this
+    # task refreshes the staged image from the current runtime copy and makes
+    # sure swaybg is actually painting it, so the background is correct even
+    # if the image was updated or swaybg was not yet running.
+    ###############################
+    - name: set library_main.jpg as kiosk desktop background
+      when: '"desktop" in display_mode.stdout'
+      ansible.builtin.shell: |
+        set -e
+        # Locate the source image (runtime copy first, then install tree).
+        SRC=""
+        for c in /root/display/library_main.jpg \
+                 /root/install/setup_library/files/display/library_main.jpg; do
+          if [ -f "$c" ]; then SRC="$c"; break; fi
+        done
+        if [ -z "$SRC" ]; then
+          echo "no library_main.jpg found; skipping wallpaper"
+          exit 0
+        fi
+
+        # Stage/refresh the wallpaper in the pi user's config.
+        install -d -o pi -g pi /home/pi/.config/library
+        cp "$SRC" /home/pi/.config/library/library_main.jpg
+        chown pi:pi /home/pi/.config/library/library_main.jpg
+
+        # Ensure swaybg is running and pointing at the wallpaper. Restart it
+        # so an updated image is picked up. Runs in the pi user's Wayland
+        # session (labwc autologin uses WAYLAND_DISPLAY=wayland-1).
+        if command -v swaybg >/dev/null 2>&1; then
+          pkill -x swaybg 2>/dev/null || true
+          sleep 1
+          runuser -l pi -c \
+            'WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-1} \
+             XDG_RUNTIME_DIR=/run/user/$(id -u pi) \
+             swaybg -i "$HOME/.config/library/library_main.jpg" -m fit >/dev/null 2>&1 &' \
+            || echo "swaybg launch attempted"
+          echo "wallpaper set from $SRC"
+        else
+          echo "swaybg not installed; wallpaper not applied"
+        fi
+      register: set_wallpaper
+      ignore_errors: true
+      become: true
+
+    - name: debug show wallpaper result
+      when: '"desktop" in display_mode.stdout'
+      ansible.builtin.debug:
+        var: set_wallpaper.stdout_lines

@@ -1,0 +1,1 @@
+wget -c https://data.maptiler.com/download/WyJhN2FmYTM0YS1jMzdlLTRmNTktYjY3MS0zZWUxYjk1NTI5M2YiLCItMSIsMTYwNDVd.ZyBLyw.Rrz3hy4O7lSGZIsyaRACoq_MsMk/maptiler-osm-2020-02-10-v3.11-planet.mbtiles?usage=non-commercial

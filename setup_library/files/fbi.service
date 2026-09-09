@@ -1,0 +1,11 @@
+[Unit]
+Description=Library Display Data
+Before=boot.mount
+
+[Service]
+Type=simple
+#ExecStart=/usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /usr/local/bin/booting.png 2>/dev/null
+#ExecStart=/usr/bin/fbi -T 2 -d /dev/fb0 -a /usr/share/library.png 2>/dev/null;sleep 2
+ExecStart=/usr/local/bin/displayit library.jpg
+[Install]
+WantedBy=multi-user.target

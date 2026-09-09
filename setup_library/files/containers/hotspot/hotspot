@@ -1,0 +1,5 @@
+#!/bin/sh
+# Shell wrapper for hotspot.py
+# Retry logic is built into hotspot.py itself — each step is verified
+# and retried up to 5 times before giving up.
+/root/hotspot.py

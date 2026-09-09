@@ -1,0 +1,30 @@
+# GraphHopper routing engine for library_maps.
+# Based on rasbase_master (Debian 13 trixie arm64). The base is a minbase
+# rootfs with no JRE, so we install one and download the GraphHopper jar.
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+LABEL description="GraphHopper car routing engine for offline maps on Raspberry Pi"
+
+ARG GH_VERSION=11.0
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        default-jre-headless \
+        ca-certificates \
+        curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/graphhopper \
+    && curl -fL --retry 5 \
+       -o /opt/graphhopper/graphhopper.jar \
+       "https://repo1.maven.org/maven2/com/graphhopper/graphhopper-web/${GH_VERSION}/graphhopper-web-${GH_VERSION}.jar"
+
+COPY config.yml /opt/graphhopper/config.yml
+WORKDIR /opt/graphhopper
+
+EXPOSE 8989
+
+# JAVA_OPTS is overridable (memory tuning). GraphHopper reads the OSM PBF and
+# builds/loads its routing graph in /data/graph-cache on first start.
+CMD ["sh", "-c", "exec java ${JAVA_OPTS:--Xms512m -Xmx3g} -jar /opt/graphhopper/graphhopper.jar server /opt/graphhopper/config.yml"]

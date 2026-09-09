@@ -1,0 +1,9 @@
+[Unit]
+Description=Library Display Data
+After=fbi.service
+
+[Service]
+Type=simple
+ExecStart=/root/.local/bin/ansible-playbook /root/start_library.yml
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,50 @@
+graphhopper:
+  datareader.file: /data/osm/region.osm.pbf
+  graph.location: /data/graph-cache
+
+  # GraphHopper 11 requires this to be set explicitly. For car routing we do not
+  # need to skip pedestrian/cycle-only ways during import; leave it empty.
+  import.osm.ignored_highways: ""
+
+  profiles:
+    - name: car
+      custom_model:
+        # GraphHopper 11 requires at least one initial 'speed' statement.
+        # Derive travel speed from the car_average_speed encoded value and cap
+        # it at the posted max_speed where known.
+        speed:
+          - if: "true"
+            limit_to: "car_average_speed"
+          - if: "true"
+            limit_to: "max_speed"
+        distance_influence: 70
+
+  profiles_ch:
+    - profile: car
+
+  profiles_lm: []
+
+  graph.encoded_values: |
+    car_access, car_average_speed, country, road_class, roundabout,
+    max_speed, road_environment, ferry_speed
+
+server:
+  application_connectors:
+    - type: http
+      port: 8989
+      bind_host: 0.0.0.0
+      max_request_header_size: 50k
+
+  admin_connectors:
+    - type: http
+      port: 8990
+      bind_host: 127.0.0.1
+
+  request_log:
+    appenders: []
+
+logging:
+  level: INFO
+  appenders:
+    - type: console
+      time_zone: UTC

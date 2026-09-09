@@ -1,0 +1,14 @@
+[Unit]
+Description=safe-to-power-off image
+DefaultDependencies=no
+After=umount.target
+#Before=final.target
+Before=halt.target
+
+[Service]
+ExecStart=/usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /usr/local/bin/libraryshutdown.jpg 2>/dev/null
+Type=oneshot
+
+[Install]
+#WantedBy=shutdown.target
+WantedBy=halt.target poweroff.target

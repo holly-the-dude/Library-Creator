@@ -1,0 +1,465 @@
+##############################
+# Start Containers
+##################
+# update display container
+- name: see if update_display container is running
+  shell: |
+    podman ps |grep update_display >/dev/null && echo Running || echo Stopped
+  register: updatedisplayrunning
+  become: true
+
+- debug: var=updatedisplayrunning
+
+- name: start display container
+  when: '"Stopped" in updatedisplayrunning.stdout'
+  shell: >
+    podman run -d  --privileged  -p 6901:6901
+    -v /dev/fb0:/dev/fb0 -v /dev/tty2:/dev/tty2
+    -w /root localhost/update_display ./update_display.py;
+    sleep 20
+
+  register: startdisplay
+  become: true
+
+- name: show startup of containter
+  when: '"Stopped" in updatedisplayrunning.stdout'
+  debug: var=startdisplay.stdout_lines
+
+
+# curl -X POST -d 'html_data=<span style="color:yellow;">
+# Your text here<br>Another line here.</span>' \
+# http://raspi:6901/upload-text
+
+- name: send message to display
+  vars:
+    color: yellow # or use #FFFFFF
+    message: "Display Container Started "
+    border: 'border: 1px solid #FFFFFF'
+  uri:
+    url: "http://127.0.0.1:6901/upload-text"
+    method: POST
+    body: >
+      html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+    body_format: raw
+    status_code:
+      - -1
+      - 200
+      - 500
+  register: sendmessage
+  become: true
+
+- debug: var=sendmessage
+
+###############################
+# hotspot container
+- name: see if hotspot container is running
+  shell: |
+    podman ps |grep hotspot >/dev/null && echo Running || echo Stopped
+  register: hotspot
+  become: true
+
+- debug: var=hotspot
+
+- name: start hotspot container
+  when: '"Stopped" in hotspot.stdout'
+  shell: |
+    podman run -d --net=host \
+    --privileged -w /root \
+    -v /dev/bus/usb:/dev/bus/usb localhost/hotspot /bin/sh -c "/usr/bin/python3 /root/hotspot.py; sleep infinity"
+    sleep 5
+    podman ps -a |tail -n1|awk '{print "podman logs "$1}'|sh
+  register: starthotspot
+  become: true
+
+- name: show startup of hotspot
+  when: '"Stopped" in hotspot.stdout'
+  debug: var=starthotspot.stdout_lines
+
+
+# curl -X POST -d 'html_data=<span style="color:yellow;">
+# Your text here<br>Another line here.</span>' \
+# http://raspi:6901/upload-text
+
+- name: send message to display
+  vars:
+    color: yellow # or use #FFFFFF
+    message: "Hotspot Started"
+    border: 'border: 1px solid #FFFFFF'
+  uri:
+    url: "http://127.0.0.1:6901/upload-text"
+    method: POST
+    body: >
+      html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+    body_format: raw
+    status_code:
+      - -1
+      - 200
+      - 500
+  register: sendmessage
+  become: true
+
+- debug: var=sendmessage
+
+################################
+###############################
+# Start Wiki if available
+- name: see if wiki is there if not dont start
+  shell: |
+    test -f /Library/wiki/wiki.xml && echo exist || echo absent
+  register: wiki_exist
+
+
+- name: start wiki block
+  when: '"exist" not in wiki_exist.stdout'
+  block:
+  - name: send message to display
+    vars:
+      color: '#FF0000'
+      message: "Wiki Folder<br>or<br>files missing"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+- name: start wiki block
+  when: '"exist" in wiki_exist.stdout'
+  block:
+  - name: send start message to display
+    vars:
+      color: '#FFd908'
+      message: "Starting Wiki"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+  - name: see if wiki container is running
+    shell: |
+      podman ps |grep wiki >/dev/null && echo Running || echo Stopped
+    register: wiki
+    become: true
+
+  - debug: var=wiki
+
+  - name: start wiki container
+    when: '"Stopped" in wiki.stdout'
+    shell: |
+      podman run -d --name wiki --ip 10.88.0.200 --privileged \
+      --restart=always --replace \
+      -v /Library/wiki:/wiki -p 6902:6902 \
+      localhost/wiki /bin/sh -c \
+      "kiwix-serve -v -p 6902 --nodatealiases --library /wiki/wiki.xml"
+    register: startwiki
+    become: true
+
+  - name: show startup of wiki
+    when: '"Stopped" in wiki.stdout'
+    debug: var=startwiki.stdout_lines
+
+  - name: verify wiki started
+    shell: |
+      sleep 15
+      curl -s localhost:6902|grep Wikipedia -c
+    register: wikiverify
+
+
+
+  - name: send message to display
+    when: '"1" in wikiverify.stdout'
+    vars:
+      color: yellow # or use #FFFFFF
+      message: "Wiki Started"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+  - name: send message to display
+    when: '"1" not in wikiverify.stdout'
+    vars:
+      color: '#FF1010'
+      message: "Wiki Failed to Start"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+  - debug: var=sendmessage
+
+################################
+    ###############################
+# Start Music if available
+- name: see if music is there if not dont start
+  shell: |
+    C=`ls /Library/music/* |wc -l`
+    if [ "$C" -gt "0" ]; then
+      echo present
+    fi
+    if [ "$C" -eq "0" ]; then
+      echo absent
+    fi
+  register: music_exist
+
+- debug: var=music_exist.stdout
+
+- name: see if music database  file is there
+  when: '"present" in music_exist.stdout'
+  block:
+    - name: look for database files
+      shell: |
+        ls /Library/.music_data 2>/dev/null && echo exists || echo does_not_exist
+      register: musicdb
+
+    - name: creating musicdb
+      shell: |
+        sleep 2
+        displayit start_035_music.jpg
+        sleep 2
+      become: true
+
+    - name: create music db
+      when: '"does_not_exist" in musicdb.stdout'
+      shell: |
+        cd /
+        tar xvf /root/install/setup_library/files/music_default_data.tar
+        echo "extracted"
+      register: musicdbinstall
+
+
+    - name: start music
+      when:
+        - '"present" in music_exist.stdout'
+        - '"exists" in musicdb.stdout or "extracted" in musicdbinstall.stdout'
+      block:
+        - name: start music
+          shell: |
+            podman volume rm --all --force
+            podman run -d --restart unless-stopped --ip 10.88.0.210 --name=music --user 0 --privileged -p 9099:5082 -v /Library/music/:/music/:ro -v /Library/.music_data:/var/lms  music:latest
+          register: musicstart
+
+        - debug: var=musicstart
+
+        - name: wait till started
+          shell: |
+            curl -s http://10.1.1.1:9099|grep '404'
+          register: musicwait
+          ignore_errors: true
+          until: '"404" in musicwait.stdout'
+          retries: 20
+          delay: 15
+
+        - name: music started
+          shell: |
+            sleep 2
+            displayit start_035_music_started.jpg
+            sleep 2
+          become: true
+###############################
+# Start Webserver if available
+- name: see if webserver is there if not dont start
+  shell: |
+    test -d /Library/library && echo exist || echo absent
+  register: www_exist
+
+
+- name: start webserver block
+  when: '"exist" not in www_exist.stdout'
+  block:
+  - name: send message to display
+    vars:
+      color: '#FFa0a0'
+      message: "library Folder directory<br>is missing<br>shutdown <br>put files there"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+- name: start www block
+  when: '"exist" in www_exist.stdout'
+  block:
+  - name: send start message to display
+    vars:
+      color: '#FFd908'
+      message: "Starting Webserver"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+  - name: see if www container is running
+    shell: |
+      podman ps |grep webserver >/dev/null && echo Running || echo Stopped
+    register: www
+    become: true
+
+  - debug: var=www
+
+  - name: start www container
+    when: '"Stopped" in www.stdout'
+    shell: |
+      podman run -d -v /Library:/library \
+      -p 80:80 \
+      --ip 10.88.0.201  --privileged  \
+      localhost/webserver /bin/sh -c '/usr/bin/python3 /root/library.py;sleep infinity'
+      sleep 30
+      nohup /usr/local/bin/library_shutdown.py &
+    register: startwww
+    become: true
+
+  - name: show startup of www
+    when: '"Stopped" in www.stdout'
+    debug: var=startwww.stdout_lines
+#################################################
+  - name: verify www started just index
+    shell: |
+      curl -s localhost|grep 'Library Index' -c
+    register: wwwindex
+    ignore_errors: true
+    become: true
+    until: '"1" in wwwindex.stdout'
+    delay: 5
+    retries: 1000
+    become: true
+
+
+
+  - name: rebuild message
+    when: '"1" in wwwindex.stdout'
+    vars:
+      color: yellow # or use #FFFFFF
+      message: "Webserver Rebuilding "
+      border: 'border: 4px solid #08dfff'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+
+
+#################################################
+
+
+  - name: verify www started
+    shell: |
+      curl -s localhost|grep Shutdown -c
+    register: wwwverify
+    ignore_errors: true
+    until: '"1" in wwwverify.stdout'
+    delay: 5
+    retries: 1000
+    become: true
+
+  - name: start shutdown flask
+    shell: |
+      nohup /usr/local/bin/library_shutdown.py > /tmp/s.log 2>&1 &
+    register: shut
+    become: true
+
+  - debug: var=shut
+
+  - name: send message to display
+    when: '"1" in wwwverify.stdout'
+    vars:
+      color: yellow # or use #FFFFFF
+      message: "Webserver Started"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+  - name: send message to display
+    when: '"1" not in wwwverify.stdout'
+    vars:
+      color: '#FF1010'
+      message: "Webserver Failed to Start"
+      border: 'border: 1px solid #FFFFFF'
+    uri:
+      url: "http://127.0.0.1:6901/upload-text"
+      method: POST
+      body: >
+        html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+      body_format: raw
+      status_code:
+        - -1
+        - 200
+        - 500
+    register: sendmessage
+    become: true
+
+  - name: final message
+    shell: |
+      sleep 2
+      displayit library_main.jpg
+      sleep 2
+    become: true
+
+

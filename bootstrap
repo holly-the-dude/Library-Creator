@@ -1,0 +1,1133 @@
+#!/bin/bash
+# version 1.0
+###########################################################################
+# bootstrap - Interactive Library Installer for Raspberry Pi
+# Color-coded, menu-driven installer
+###########################################################################
+
+###########################################################################
+# Color Definitions
+###########################################################################
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+WHITE='\033[1;37m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
+
+###########################################################################
+# Helper Functions
+###########################################################################
+banner() {
+    echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║${WHITE}       Library Bootstrap Installer                ${CYAN}║${NC}"
+    echo -e "${CYAN}║${YELLOW}       Raspberry Pi Edition                       ${CYAN}║${NC}"
+    echo -e "${CYAN}║${MAGENTA}       version 1.0                                ${CYAN}║${NC}"
+    echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
+}
+
+msg_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+msg_ok() {
+    echo -e "${GREEN}[  OK]${NC} $1"
+}
+
+msg_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+msg_error() {
+    echo -e "${RED}[FAIL]${NC} $1"
+}
+
+msg_step() {
+    echo -e "${MAGENTA}[STEP]${NC} ${BOLD}$1${NC}"
+}
+
+separator() {
+    echo -e "${CYAN}──────────────────────────────────────────────────${NC}"
+}
+
+confirm() {
+    local prompt="${1:-Are you sure?}"
+    echo -en "${YELLOW}${prompt} [y/N]: ${NC}"
+    read -r response
+    [[ "$response" =~ ^[Yy]$ ]]
+}
+
+pause() {
+    echo -en "${CYAN}Press any key to continue...${NC}"
+    read -n 1 -s
+    echo
+}
+
+###########################################################################
+# Menu Functions
+###########################################################################
+show_main_menu() {
+    clear
+    banner
+    echo -e "${WHITE}  Main Menu${NC}"
+    separator
+    echo -e "  ${GREEN}1)${NC} Fresh Install          - Full installation from scratch"
+    echo -e "  ${GREEN}2)${NC} Reinstall              - Remove existing and reinstall"
+    echo -e "  ${GREEN}3)${NC} Resume Install         - Continue interrupted install"
+    echo -e "  ${GREEN}4)${NC} System Status          - Check installation progress"
+    echo -e "  ${GREEN}5)${NC} Advanced Options       - Manual boot stage selection"
+    echo -e "  ${RED}q)${NC} Quit"
+    separator
+    echo -en "${WHITE}  Select option: ${NC}"
+}
+
+show_display_menu() {
+    clear
+    banner
+    echo -e "${WHITE}  Display Selection${NC}"
+    separator
+    echo -e "  ${GREEN}1)${NC} TFT 3.5\"  (480x320)   - Larger TFT display"
+    echo -e "  ${GREEN}2)${NC} TFT 2.4\"  (320x240)   - Compact TFT display"
+    echo -e "  ${GREEN}3)${NC} HDMI (auto-scale)     - Monitor, scaled status messages"
+    echo -e "  ${GREEN}4)${NC} HDMI desktop          - Monitor, Pi desktop + kiosk browser"
+    echo -e "  ${RED}b)${NC} Back to Main Menu"
+    separator
+    echo -en "${WHITE}  Select display type: ${NC}"
+}
+
+# Prompt the user for an HDMI resolution and export LIBRARY_HDMI_RES.
+# Default is auto-scale (KMS reads the monitor's EDID and uses its native
+# resolution). Fixed choices are offered as a fallback for monitors with
+# bad/absent EDID where auto-detection fails.
+prompt_hdmi_resolution() {
+    clear
+    banner
+    echo -e "${WHITE}  HDMI Resolution${NC}"
+    separator
+    echo -e "  ${GREEN}1)${NC} Auto-scale (recommended) - Use the monitor's native resolution"
+    echo -e "  ${GREEN}2)${NC} 1920x1080 (1080p)"
+    echo -e "  ${GREEN}3)${NC} 1280x720  (720p)"
+    echo -e "  ${GREEN}4)${NC} 1024x600"
+    echo -e "  ${GREEN}5)${NC} 800x480"
+    echo -e "  ${GREEN}6)${NC} Custom (enter WxH)"
+    separator
+    echo -en "${WHITE}  Select resolution [1]: ${NC}"
+    read -r res_choice
+    case "$res_choice" in
+        ""|1) LIBRARY_HDMI_RES="auto" ;;
+        2)    LIBRARY_HDMI_RES="1920x1080" ;;
+        3)    LIBRARY_HDMI_RES="1280x720" ;;
+        4)    LIBRARY_HDMI_RES="1024x600" ;;
+        5)    LIBRARY_HDMI_RES="800x480" ;;
+        6)
+            echo -en "${WHITE}  Enter resolution as WxH (e.g. 1600x900): ${NC}"
+            read -r custom_res
+            if echo "$custom_res" | grep -Eq '^[0-9]+x[0-9]+$'; then
+                LIBRARY_HDMI_RES="$custom_res"
+            else
+                msg_error "Invalid format; falling back to auto-scale"
+                LIBRARY_HDMI_RES="auto"
+            fi
+            ;;
+        *)
+            msg_error "Invalid selection; using auto-scale"
+            LIBRARY_HDMI_RES="auto"
+            ;;
+    esac
+    export LIBRARY_HDMI_RES
+    msg_ok "HDMI resolution: $LIBRARY_HDMI_RES"
+}
+
+show_advanced_menu() {
+    clear
+    banner
+    echo -e "${WHITE}  Advanced Options${NC}"
+    separator
+    echo -e "  ${GREEN}1)${NC} Run First Boot only   - Download & initial setup"
+    echo -e "  ${GREEN}2)${NC} Run Second Boot only  - Ansible playbook install"
+    echo -e "  ${GREEN}3)${NC} Run Third Boot only   - Final configuration"
+    echo -e "  ${GREEN}4)${NC} Reset all boot flags  - Clear .0boot .firstboot .secondboot .thirdboot"
+    echo -e "  ${GREEN}5)${NC} View install log      - Show /root/install.log"
+    echo -e "  ${RED}b)${NC} Back to Main Menu"
+    separator
+    echo -en "${WHITE}  Select option: ${NC}"
+}
+
+show_status() {
+    clear
+    banner
+    echo -e "${WHITE}  System Status${NC}"
+    separator
+
+    echo -en "  First Boot:  "
+    if test -e "/root/.firstboot"; then
+        echo -e "${GREEN}COMPLETE${NC}"
+    else
+        echo -e "${YELLOW}PENDING${NC}"
+    fi
+
+    echo -en "  Second Boot: "
+    if test -e "/root/.secondboot"; then
+        echo -e "${GREEN}COMPLETE${NC}"
+    else
+        echo -e "${YELLOW}PENDING${NC}"
+    fi
+
+    echo -en "  Third Boot:  "
+    if test -e "/root/.thirdboot"; then
+        echo -e "${GREEN}COMPLETE${NC}"
+    else
+        echo -e "${YELLOW}PENDING${NC}"
+    fi
+
+    echo -en "  Boot Flag:   "
+    if test -e "/root/.0boot"; then
+        echo -e "${GREEN}SET${NC}"
+    else
+        echo -e "${YELLOW}NOT SET${NC}"
+    fi
+
+    separator
+    echo -en "  Uptime:      "
+    echo -e "${CYAN}$(uptime -p)${NC}"
+
+    echo -en "  Ansible:     "
+    ANS=$(ps -eaf | grep -i ansible-playbook -c)
+    if [ "$ANS" -gt 1 ]; then
+        echo -e "${YELLOW}RUNNING${NC}"
+    else
+        echo -e "${GREEN}NOT RUNNING${NC}"
+    fi
+
+    separator
+    pause
+}
+
+###########################################################################
+# Uptime Check
+###########################################################################
+check_uptime() {
+    if test -e "/root/.0boot"; then
+        UP=$(uptime -p | awk '{print $2}')
+        if [ "$UP" -gt 5 ]; then
+            msg_error "Outside of run window (uptime: ${UP} minutes)"
+            msg_info "This script should only auto-run within 5 minutes of boot"
+            return 1
+        fi
+        ANS=$(ps -eaf | grep -i ansible-playbook -c)
+        if [ "$ANS" -gt 1 ]; then
+            msg_warn "Ansible playbook still running (uptime: ${UP} min)"
+            return 1
+        fi
+    fi
+    return 0
+}
+
+###########################################################################
+# Reinstall Function
+###########################################################################
+do_reinstall() {
+    msg_warn "This will remove all installation progress and container images!"
+    separator
+    if confirm "Are you sure you want to reinstall?"; then
+        msg_step "Removing boot flags and install files..."
+        rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot /root/start_library
+        rm -rf /root/install /root/display
+        msg_step "Removing all podman images..."
+        podman rmi --all --force 2>/dev/null
+        msg_ok "Reinstall cleanup complete"
+        msg_info "You can now run a Fresh Install"
+    else
+        msg_info "Reinstall cancelled"
+    fi
+    pause
+}
+
+###########################################################################
+# First Boot
+###########################################################################
+do_first_boot() {
+    if test -e "/root/.firstboot"; then
+        msg_warn "First boot has already been completed"
+        if ! confirm "Run again anyway?"; then
+            return
+        fi
+    fi
+
+    msg_step "Starting First Boot Process"
+    separator
+
+    touch /root/.firstboot
+    touch /root/.0boot
+    chmod +x /root/bootstrap
+
+    # USB Formatting
+    echo -e "${YELLOW}"
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  USB Drive Formatting                            ║"
+    echo "║  Any inserted USB will be formatted!             ║"
+    echo "║  You have 30 seconds to remove it if needed      ║"
+    echo "║  (Skip if device is already set up)              ║"
+    echo "╚══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    for i in $(seq 30 -1 1); do
+        echo -ne "\r  ${YELLOW}Formatting in ${WHITE}${i}${YELLOW} seconds... (Ctrl+C to abort)${NC}  "
+        sleep 1
+    done
+    echo
+
+    DEVICE=$(fdisk -l | grep sd | grep -v : | awk '{print $1}')
+    LIBR=$(lsblk -i -o NAME,FSTYPE,LABEL | grep Library_USB | awk '{print $3}')
+    mkdir -p /Library
+    chmod 777 /Library
+
+    if [ "$DEVICE" != "" ]; then
+        msg_info "Found device: $DEVICE"
+        if [ "$LIBR" != "Library_USB" ]; then
+            msg_warn "Device is NOT labeled Library_USB - will format"
+            for i in $(seq 30 -1 1); do
+                echo -ne "\r  ${RED}FORMATTING in ${WHITE}${i}${RED} seconds... (Ctrl+C to abort)${NC}  "
+                sleep 1
+            done
+            echo
+            msg_step "Formatting device as exFAT..."
+            lsblk -o NAME,FSTYPE,LABEL,SIZE,MOUNTPOINT | grep sd
+
+            # Make sure the tools we need are present before formatting.
+            # (The main package install runs later in first boot, so we can't
+            # rely on it here.)
+            for tool_pkg in "sgdisk:gdisk" "mkfs.exfat:exfatprogs" "wipefs:util-linux" "partprobe:parted"; do
+                bin="${tool_pkg%%:*}"; pkg="${tool_pkg##*:}"
+                if ! command -v "$bin" >/dev/null 2>&1; then
+                    msg_info "Installing ${pkg} (provides ${bin})..."
+                    apt-get -y install "$pkg" >/dev/null 2>&1 || msg_warn "Could not install ${pkg}"
+                fi
+            done
+
+            # Resolve the underlying whole disk (e.g. /dev/sda) from whatever
+            # fdisk returned (which may be a partition like /dev/sda1).
+            # We must repartition the whole disk so macOS/Windows see a valid
+            # GPT + Microsoft Basic Data (exFAT) volume instead of prompting to
+            # "initialize" the drive.
+            BASE_DEVICE="/dev/$(lsblk -no pkname "$DEVICE" 2>/dev/null | head -n1)"
+            if [ "$BASE_DEVICE" = "/dev/" ] || [ -z "$(lsblk -no pkname "$DEVICE" 2>/dev/null | head -n1)" ]; then
+                # $DEVICE was already a whole disk (no parent) - use it directly
+                BASE_DEVICE=$(echo "$DEVICE" | sed 's/[0-9]*$//')
+            fi
+            msg_info "Target disk: $BASE_DEVICE"
+
+            # Unmount the disk and every partition on it before touching it.
+            # Auto-mounters (e.g. udisks) mount partitions at /media/... which
+            # makes formatting fail with "Device or resource busy".
+            msg_info "Unmounting $BASE_DEVICE and its partitions if mounted..."
+            for part in $(lsblk -ln -o NAME "$BASE_DEVICE" 2>/dev/null); do
+                umount "/dev/${part}" 2>/dev/null || true
+            done
+            sync
+            sleep 2
+
+            # Wipe old filesystem/partition-table signatures so nothing stale
+            # confuses macOS Disk Arbitration.
+            msg_info "Wiping old signatures on $BASE_DEVICE..."
+            wipefs -a "$BASE_DEVICE" 2>/dev/null || true
+
+            # Create a fresh GPT with a single partition typed as Microsoft
+            # Basic Data (GUID EBD0A0A2-B9E5-4433-87C0-68B6B72699C7). This is the
+            # type macOS/Windows expect for an exFAT data volume.
+            msg_info "Creating GPT partition table on $BASE_DEVICE..."
+            if command -v sgdisk >/dev/null 2>&1; then
+                sgdisk --zap-all "$BASE_DEVICE"
+                sgdisk --new=1:0:0 --typecode=1:0700 --change-name=1:Library_USB "$BASE_DEVICE"
+            else
+                # Fallback to parted if gdisk/sgdisk isn't installed
+                msg_warn "sgdisk not found - installing gdisk..."
+                apt-get -y install gdisk >/dev/null 2>&1
+                if command -v sgdisk >/dev/null 2>&1; then
+                    sgdisk --zap-all "$BASE_DEVICE"
+                    sgdisk --new=1:0:0 --typecode=1:0700 --change-name=1:Library_USB "$BASE_DEVICE"
+                else
+                    msg_warn "sgdisk still unavailable - falling back to parted"
+                    parted -s "$BASE_DEVICE" mklabel gpt
+                    parted -s "$BASE_DEVICE" mkpart primary 0% 100%
+                fi
+            fi
+
+            # Re-read the partition table and wait for the new partition node.
+            partprobe "$BASE_DEVICE" 2>/dev/null || true
+            sync
+            sleep 2
+
+            # Determine the first partition device name. NVMe/mmc use a 'p'
+            # separator (e.g. mmcblk0p1); sd*/USB do not (e.g. sda1).
+            PART_DEVICE=$(lsblk -ln -o NAME,TYPE "$BASE_DEVICE" 2>/dev/null | awk '$2=="part"{print $1; exit}')
+            if [ -n "$PART_DEVICE" ]; then
+                PART_DEVICE="/dev/${PART_DEVICE}"
+            else
+                # Fallback: guess based on device naming convention
+                case "$BASE_DEVICE" in
+                    *[0-9]) PART_DEVICE="${BASE_DEVICE}p1" ;;
+                    *)      PART_DEVICE="${BASE_DEVICE}1"  ;;
+                esac
+            fi
+            msg_info "Formatting partition: $PART_DEVICE"
+
+            mkfs.exfat -n Library_USB "$PART_DEVICE"
+            mount "$PART_DEVICE" /Library
+	    # untar files to the library faster this way 
+	    # setup_library/files/usb_base
+	    sleep 4
+	    cd /Library
+            tar xvzf /root/Library-Creator/setup_library/files/Library_USB.tar
+	    cd /Library/wiki
+	    ./getwiki.sh
+            msg_ok "USB formatted and mounted and base files put there"
+        else
+            msg_ok "Library_USB already present - skipping format"
+        fi
+    else
+        msg_info "No USB device found - skipping"
+    fi
+    apt-get -y update 
+    apt-get -y upgrade 
+    apt-get -y install partclone fsarchiver
+
+    # Download install files
+    separator
+    mkdir -p /root/install
+    cd /root/install
+    ######################################################
+    # since we did a git clone were going to move it here 
+    # #####################################################
+    cp -r /root/Library-Creator/* .
+    cp  /root/Library-Creator/bootstrap /root/.
+    # ####################################################
+    # Build containers before continuing the build
+    # ####################################################
+    separator
+    apt-get -y install podman
+    msg_step "Building containers..."
+    cd /root/install/setup_library/files/containers
+
+    msg_info "Running reconstitute.sh..."
+    if bash reconstitute.sh; then
+        msg_ok "reconstitute.sh completed"
+    else
+        msg_error "reconstitute.sh failed"
+        exit 1
+    fi
+
+    msg_info "Running update_rasbase.sh..."
+    if bash update_rasbase.sh; then
+        msg_ok "update_rasbase.sh completed"
+    else
+        msg_error "update_rasbase.sh failed"
+        exit 1
+    fi
+
+    msg_info "Running build_pods.sh..."
+    if bash build_pods.sh; then
+        msg_ok "build_pods.sh completed"
+    else
+        msg_error "build_pods.sh failed"
+        exit 1
+    fi
+
+    msg_ok "Containers built"
+    cd /root/install
+    # ####################################################
+    # Frame Buffer Installation
+    separator
+    msg_step "Installing frame buffer for display..."
+
+    # Detect Debian version for Trixie compatibility
+    DEB_VERSION=$(cat /etc/debian_version 2>/dev/null | tr -d '\n')
+    IS_TRIXIE=false
+    if [[ "$DEB_VERSION" == 13* ]] || [[ "$DEB_VERSION" == "trixie"* ]]; then
+        IS_TRIXIE=true
+        msg_info "Detected Debian Trixie ($DEB_VERSION) - applying compatibility fixes"
+    fi
+
+    # Trixie compatibility: create /etc/rc.local if missing (needed by LCD-show scripts)
+    if [ ! -f /etc/rc.local ]; then
+        msg_info "Creating /etc/rc.local (missing on Trixie)..."
+        cat > /etc/rc.local << 'RCEOF'
+#!/bin/sh -e
+#
+# rc.local - created by bootstrap for LCD-show compatibility
+#
+# This script is executed at the end of each multiuser runlevel.
+# Make sure that the script will "exit 0" on success or any other
+# value on error.
+
+exit 0
+RCEOF
+        chmod +x /etc/rc.local
+        msg_ok "/etc/rc.local created"
+    fi
+
+    # Trixie compatibility: create /etc/lightdm/lightdm.conf if missing (needed by LCD-show scripts)
+    if [ ! -f /etc/lightdm/lightdm.conf ]; then
+        msg_info "Creating /etc/lightdm/lightdm.conf placeholder (missing on Trixie)..."
+        mkdir -p /etc/lightdm
+        cat > /etc/lightdm/lightdm.conf << 'LDEOF'
+[Seat:*]
+#autologin-user=
+LDEOF
+        msg_ok "/etc/lightdm/lightdm.conf created"
+    fi
+
+    if [ "$DISP" == "1" ]; then
+        msg_info "Installing TFT 3.5\" display drivers"
+        cd /root/install
+        tar xf setup_library/files/tft.tar
+        cd tft
+
+        if test -d /root/install/tft/LCD-show; then
+            msg_ok "LCD-show directory exists"
+        else
+            msg_info "Cloning LCD-show repository..."
+            git clone https://github.com/goodtft/LCD-show.git
+        fi
+
+        if test -d /root/install/tft/LCD-show; then
+            msg_ok "LCD-show directory exists"
+        else
+            msg_warn "First clone failed, retrying in 30 seconds..."
+            sleep 30
+            git clone https://github.com/goodtft/LCD-show.git
+        fi
+
+        if test -d /root/install/tft/LCD-show; then
+            msg_ok "LCD-show ready"
+            cd LCD-show
+
+            # Install display dependencies (Trixie-compatible)
+            if [ "$IS_TRIXIE" = true ]; then
+                msg_info "Installing Trixie-compatible display packages..."
+                apt-get -y install libdtovl0 || msg_warn "libdtovl0 not available, continuing..."
+            else
+                apt-get -y install libraspberrypi-dev raspberrypi-kernel-headers
+            fi
+
+            # Remove all reboot commands from LCD-show scripts to prevent premature reboot
+            sed -i '/sudo reboot/d' LCD35-show
+            sed -i '/sudo reboot/d' LCD24-show
+            sed -i 's/apt-get install xserver/apt-get -y install xserver/g' LCD24-show
+            sed -i 's/sudo apt-get update/sudo apt-get -y update/g' LCD24-show
+
+            # Install X11/display packages (Trixie-compatible)
+            if [ "$IS_TRIXIE" = true ]; then
+                # Trixie package renames: libllvm15->libllvm19, libmtdev1->libmtdev1t64,
+                # libxt6->libxt6t64, libsensors5->libsensors6, libglapi-mesa->mesa-libgallium
+                apt-get -y install gldriver-test libdrm-amdgpu1 libdrm-nouveau2 libdrm-radeon1 \
+                    libegl-mesa0 libegl1 libepoxy0 libevdev2 libfontenc1 libgbm1 libgl1 \
+                    libgl1-mesa-dri mesa-libgallium libglvnd0 libglx-mesa0 libglx0 libice6 \
+                    libllvm19 libmtdev1t64 libpciaccess0 libpixman-1-0 libsensors-config \
+                    libsensors6 libsm6 libwayland-client0 libwayland-server0 libx11-xcb1 \
+                    libxaw7 libxcb-dri2-0 libxcb-dri3-0 libxcb-glx0 libxcb-present0 \
+                    libxcb-randr0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcvt0 \
+                    libxfixes3 libxfont2 libxkbfile1 libxmu6 libxrandr2 libxrender1 \
+                    libxshmfence1 libxt6t64 libxxf86vm1 libz3-4 x11-common x11-xkb-utils \
+                    xcvt xfonts-base xfonts-encodings xfonts-utils xserver-common xserver-xorg-core
+            else
+                apt-get -y install gldriver-test libdrm-amdgpu1 libdrm-nouveau2 libdrm-radeon1 libegl-mesa0 libegl1 libepoxy0 libevdev2 libfontenc1 libgbm1 libgl1 libgl1-mesa-dri libglapi-mesa libglvnd0 libglx-mesa0 libglx0 libice6 libllvm15 libmtdev1 libpciaccess0 libpixman-1-0 libsensors-config libsensors5 libsm6 libwayland-client0 libwayland-server0 libx11-xcb1 libxaw7 libxcb-dri2-0 libxcb-dri3-0 libxcb-glx0 libxcb-present0 libxcb-randr0 libxcb-shm0 libxcb-sync1 libxcb-xfixes0 libxcvt0 libxfixes3 libxfont2 libxkbfile1 libxmu6 libxrandr2 libxrender1 libxshmfence1 libxt6 libxxf86vm1 libz3-4 x11-common x11-xkb-utils xcvt xfonts-base xfonts-encodings xfonts-utils xserver-common xserver-xorg-core
+            fi
+
+            # Trixie compatibility: patch LCD35-show date comparison bug before running
+            # The script extracts version from uname -v which outputs e.g. "(2026-06-09)"
+            # then tries "test $version -lt 2017" which fails because it's not an integer.
+            # Fix: replace the integer test with a no-op comparison that always takes the
+            # "newer kernel" branch (which is what Trixie always is).
+            if [ "$IS_TRIXIE" = true ]; then
+                msg_info "Patching LCD35-show date comparison bug for Trixie..."
+                sed -i 's|if test $version -lt 2017;then|if test 2026 -lt 2017;then|' LCD35-show
+                # Also patch system_backup.sh to not fail on missing /etc/rc.local
+                if [ -f system_backup.sh ]; then
+                    sed -i 's|sudo cp -rf /etc/rc.local ./.system_backup/|[ -f /etc/rc.local ] \&\& sudo cp -rf /etc/rc.local ./.system_backup/|' system_backup.sh
+                fi
+                # Patch the internal libraspberrypi-dev install in LCD35-show for Trixie
+                sed -i 's|sudo apt-get install cmake libraspberrypi-dev -y|sudo apt-get install cmake libdtovl0 -y|' LCD35-show
+                msg_ok "LCD-show scripts patched for Trixie"
+            fi
+
+            ./LCD35-show
+            systemctl disable lightdm 2>/dev/null || true
+            msg_ok "TFT 3.5\" display configured"
+        else
+            msg_error "LCD-show clone failed!"
+        fi
+
+    elif [ "$DISP" == "0" ]; then
+        msg_info "Installing TFT 2.4\" display drivers"
+        cd /root/install
+        tar xf setup_library/files/tft.tar
+
+        # Install display dependencies (Trixie-compatible)
+        if [ "$IS_TRIXIE" = true ]; then
+            msg_info "Installing Trixie-compatible display packages..."
+            apt-get -y install libdtovl0 || msg_warn "libdtovl0 not available, continuing..."
+        else
+            apt-get -y install libraspberrypi-dev raspberrypi-kernel-headers
+        fi
+
+        cd /root/install/tft/LCD-show
+
+        # Remove all reboot commands from LCD-show scripts to prevent premature reboot
+        sed -i '/sudo reboot/d' LCD24-show
+        sed -i 's/apt-get install xserver/apt-get -y install xserver/g' LCD24-show
+        sed -i 's/sudo apt-get update/sudo apt-get -y update/g' LCD24-show
+
+        # Trixie compatibility: patch LCD24-show date comparison bug
+        if [ "$IS_TRIXIE" = true ]; then
+            msg_info "Patching LCD24-show date comparison bug for Trixie..."
+            sed -i 's|if test $version -lt 2017;then|if test 2026 -lt 2017;then|' LCD24-show
+            # Also patch system_backup.sh to not fail on missing /etc/rc.local
+            if [ -f system_backup.sh ]; then
+                sed -i 's|sudo cp -rf /etc/rc.local ./.system_backup/|[ -f /etc/rc.local ] \&\& sudo cp -rf /etc/rc.local ./.system_backup/|' system_backup.sh
+            fi
+            # Patch the internal libraspberrypi-dev install in LCD24-show for Trixie
+            sed -i 's|sudo apt-get install cmake libraspberrypi-dev -y|sudo apt-get install cmake libdtovl0 -y|' LCD24-show
+            msg_ok "LCD-show scripts patched for Trixie"
+        fi
+
+        ./LCD24-show
+        cd /root/install/tft/tft-24/converted_shell_scripts
+        (echo 1 && echo 1 && echo y && echo n) | ./adafruit-pitft.sh
+        systemctl disable lightdm 2>/dev/null || true
+        msg_ok "TFT 2.4\" display configured"
+
+    elif [ "$DISP" == "hdmi" ] || [ "$DISP" == "desktop" ]; then
+        # ---------------------------------------------------------------
+        # HDMI modes (auto-scaling by default).
+        #   DISP=hdmi    -> monitor, fbi status messages (auto-scaled JPEGs)
+        #   DISP=desktop -> monitor, boot to Pi desktop (labwc) +
+        #                   chromium kiosk to http://10.1.1.1
+        #
+        # Raspberry Pi OS (Bullseye and later, incl. Trixie) uses the KMS
+        # display driver (vc4-kms-v3d). Under KMS the legacy config.txt
+        # video-mode keys (hdmi_group/hdmi_mode/hdmi_cvt/hdmi_drive) are
+        # IGNORED; the kernel reads the monitor's EDID and picks its native
+        # resolution automatically. So the default behaviour here is simply
+        # "connect any HDMI monitor and it auto-scales".
+        #
+        # Optional override: set LIBRARY_HDMI_RES to force a resolution when
+        # a monitor has bad/absent EDID (auto-detection fails). Accepted
+        # values: auto (default), 1920x1080, 1280x720, 1024x600, 800x480,
+        # or any WxH. A forced mode is applied the KMS-compatible way via a
+        # video= parameter in cmdline.txt.
+        #   e.g.  LIBRARY_HDMI_RES=1280x720 ./bootstrap ...
+        # No TFT overlay and no fbcp mirror in these modes; fbi -a
+        # auto-scales the existing 480x320 JPEGs to whatever the panel is.
+        # Resolution changes only take effect after the reboot at the end of
+        # first boot.
+        # ---------------------------------------------------------------
+        HDMI_RES="${LIBRARY_HDMI_RES:-auto}"
+
+        if [ "$DISP" == "desktop" ]; then
+            msg_info "Configuring HDMI (Pi desktop + kiosk browser), resolution: $HDMI_RES"
+        else
+            msg_info "Configuring HDMI (status messages), resolution: $HDMI_RES"
+        fi
+
+        # Resolve the active config.txt (Trixie uses /boot/firmware/config.txt;
+        # /boot/config.txt is usually a symlink to it).
+        CONFIG_TXT=/boot/firmware/config.txt
+        [ -e "$CONFIG_TXT" ] || CONFIG_TXT=/boot/config.txt
+        cp "$CONFIG_TXT" "${CONFIG_TXT}.bak.$(date +%s)" 2>/dev/null || true
+
+        # Resolve the active cmdline.txt (used for the KMS video= override).
+        CMDLINE_TXT=/boot/firmware/cmdline.txt
+        [ -e "$CMDLINE_TXT" ] || CMDLINE_TXT=/boot/cmdline.txt
+
+        # Strip any prior TFT overlay and previous library HDMI block so this
+        # is idempotent across re-runs and switching away from a TFT install.
+        sed -i -e '/dtoverlay=tft35a/d' -e '/dtoverlay=pitft/d' "$CONFIG_TXT"
+        sed -i -e '/^# --- added by library-creator hdmi/,/^# --- end library-creator hdmi/d' "$CONFIG_TXT"
+        # Remove old forced HDMI mode lines if present (ignored under KMS but
+        # clean them up regardless).
+        sed -i -e '/^hdmi_cvt /d' -e '/^hdmi_group=/d' -e '/^hdmi_mode=/d' \
+               -e '/^hdmi_drive=/d' "$CONFIG_TXT"
+        # Remove any previous library-managed video= override from cmdline.txt.
+        if [ -e "$CMDLINE_TXT" ]; then
+            sed -i -e 's/ *video=HDMI-A-[0-9]*:[^ ]*//g' "$CMDLINE_TXT"
+        fi
+
+        # Keep HDMI output alive even if no monitor is plugged in at boot;
+        # everything else is left to KMS EDID auto-detection.
+        cat >> "$CONFIG_TXT" <<'HDMIEOF'
+# --- added by library-creator hdmi ---
+# HDMI resolution is auto-detected from the monitor's EDID under the KMS
+# driver. Force a mode only via LIBRARY_HDMI_RES (writes cmdline.txt).
+hdmi_force_hotplug=1
+# --- end library-creator hdmi ---
+HDMIEOF
+
+        if [ "$HDMI_RES" == "auto" ] || [ -z "$HDMI_RES" ]; then
+            msg_ok "HDMI set to auto-scale (native EDID resolution) in $CONFIG_TXT"
+        else
+            # Validate WxH and translate to a KMS video= parameter, which the
+            # display driver DOES honour (unlike hdmi_mode under KMS).
+            if echo "$HDMI_RES" | grep -Eq '^[0-9]+x[0-9]+$'; then
+                W="${HDMI_RES%x*}"
+                H="${HDMI_RES#*x}"
+                if [ -e "$CMDLINE_TXT" ]; then
+                    # cmdline.txt must stay a single line; append the video= arg.
+                    sed -i "s/\$/ video=HDMI-A-1:${W}x${H}M@60/" "$CMDLINE_TXT"
+                    msg_ok "HDMI forced to ${W}x${H}@60 via $CMDLINE_TXT (video=)"
+                else
+                    msg_error "cmdline.txt not found; could not force ${HDMI_RES} (leaving auto)"
+                fi
+            else
+                msg_error "LIBRARY_HDMI_RES='$HDMI_RES' is not WxH; leaving auto-scale"
+            fi
+        fi
+
+        # Record the selected mode so start_library.yml knows what to do at
+        # the end of startup.
+        echo "$DISP" > /root/.display_mode
+        msg_ok "Display mode recorded: $DISP"
+
+        if [ "$DISP" == "desktop" ]; then
+            # Autologin the 'pi' user into a labwc Wayland desktop via lightdm.
+            msg_info "Enabling desktop autologin for 'pi'..."
+            mkdir -p /etc/lightdm
+            cat > /etc/lightdm/lightdm.conf <<'LDEOF'
+[Seat:*]
+autologin-user=pi
+autologin-user-timeout=0
+autologin-session=labwc
+LDEOF
+            systemctl enable lightdm 2>/dev/null || true
+
+            # labwc does not draw a wallpaper itself; swaybg renders the
+            # background layer behind the kiosk browser. This shows
+            # library_main.jpg on the desktop before/while chromium loads
+            # instead of a blank grey screen.
+            msg_info "Installing swaybg for desktop wallpaper..."
+            apt-get -y install swaybg >/dev/null 2>&1 \
+                && msg_ok "swaybg installed" \
+                || msg_error "Failed to install swaybg (wallpaper may not show)"
+
+            # Stage the wallpaper in the pi user's home so the autostart can
+            # reference a stable path owned by 'pi'.
+            mkdir -p /home/pi/.config/library
+            cp /root/install/setup_library/files/display/library_main.jpg \
+                /home/pi/.config/library/library_main.jpg 2>/dev/null \
+                && msg_ok "Wallpaper staged (library_main.jpg)" \
+                || msg_error "Could not stage library_main.jpg wallpaper"
+
+            # labwc autostart: set the wallpaper, then launch chromium in
+            # kiosk mode to the library.
+            msg_info "Configuring chromium kiosk autostart (http://10.1.1.1)..."
+            mkdir -p /home/pi/.config/labwc
+            cat > /home/pi/.config/labwc/autostart <<'ASEOF'
+#!/bin/sh
+# Set the desktop background to library_main.jpg (shown behind the kiosk
+# browser and while it loads). swaybg draws the Wayland background layer.
+if command -v swaybg >/dev/null 2>&1; then
+    swaybg -i "$HOME/.config/library/library_main.jpg" -m fit &
+fi
+# Optional: blank the screen after 10 min idle (only if the tools exist).
+if command -v swayidle >/dev/null 2>&1 && command -v wlopm >/dev/null 2>&1; then
+    swayidle -w timeout 600 'wlopm --off "*"' resume 'wlopm --on "*"' &
+fi
+# Wait for the library web server to start answering, then open it full
+# screen in kiosk mode.
+i=0
+while [ $i -lt 60 ]; do
+    if curl -s -o /dev/null http://10.1.1.1; then break; fi
+    i=$((i+1)); sleep 2
+done
+chromium --kiosk --noerrdialogs --disable-infobars \
+    --check-for-update-interval=31536000 \
+    --disable-session-crashed-bubble \
+    --app=http://10.1.1.1 &
+ASEOF
+            chmod +x /home/pi/.config/labwc/autostart
+            chown -R pi:pi /home/pi/.config/labwc /home/pi/.config/library
+            msg_ok "Desktop + kiosk browser configured"
+        else
+            # Status-message HDMI mode keeps the fbi appliance behaviour; make
+            # sure no desktop greeter takes over the screen.
+            systemctl disable lightdm 2>/dev/null || true
+            msg_ok "HDMI status-message mode configured"
+        fi
+    fi
+
+    # System packages
+    separator
+    msg_step "Installing system packages and updates..."
+
+    echo 'PATH=$PATH:/root/.local/bin' >> /root/.bashrc
+    apt-get -y update
+
+    local packages=(
+        "python3-full"
+        "python3-pip"
+        "pipx"
+        "sshpass"
+        "vim"
+        "jq"
+        "at"
+        "git"
+        "python3-flask"
+        "python3-jmespath"
+        "fbi"
+        "podman"
+    )
+
+    for pkg in "${packages[@]}"; do
+        msg_info "Installing ${pkg}..."
+        apt-get -y install "$pkg" >/dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            msg_ok "${pkg} installed"
+        else
+            msg_error "Failed to install ${pkg}"
+        fi
+    done
+
+    msg_step "Installing Python packages via pipx..."
+    pipx install --include-deps ansible
+    pipx inject ansible jmespath
+    pipx install evdev
+
+    # Local bin files
+    separator
+    msg_step "Installing local bin utilities..."
+    cd /usr/local/bin
+    tar xvf /root/install/setup_library/files/usr_local_bin.tar
+
+    # Setup crontab for auto-resume
+    separator
+    msg_step "Setting up crontab for auto-resume after reboot..."
+    echo "* * * * * /root/bootstrap --auto 2>&1 | /usr/bin/tee -a /root/install.log" > /var/spool/cron/crontabs/root
+    chmod 0600 /var/spool/cron/crontabs/root
+    msg_ok "Crontab configured"
+
+    # Network settings
+    msg_step "Configuring network settings..."
+    echo 'country=US' >> /etc/wpa_supplicant/wpa_supplicant.conf
+    echo "auto wlan0"            >> /etc/network/interfaces
+    echo "iface wlan0 inet dhcp" >> /etc/network/interfaces
+    echo "  wireless-power off"  >> /etc/network/interfaces
+    msg_ok "Network configured"
+
+    separator
+    echo -e "${GREEN}"
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  First Boot Complete!                            ║"
+    echo "║  System will reboot in 10 seconds                ║"
+    echo "║  Installation will continue automatically        ║"
+    echo "╚══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    sleep 10
+    /usr/sbin/shutdown -r now
+}
+
+###########################################################################
+# Second Boot
+###########################################################################
+do_second_boot() {
+    if test -e "/root/.secondboot"; then
+        msg_warn "Second boot has already been completed"
+        if ! confirm "Run again anyway?"; then
+            return
+        fi
+    fi
+
+    if ! test -e "/root/.firstboot"; then
+        msg_error "First boot has not been completed yet!"
+        pause
+        return
+    fi
+
+    msg_step "Starting Second Boot - Ansible Playbook Installation"
+    separator
+
+    msg_info "Displaying configuration screen on TFT..."
+    /usr/bin/fbi -T 2 -d /dev/fb0 -noverbose -a /root/install/setup_library/files/display/library_configuring.jpg 2>/dev/null
+    /usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /root/install/setup_library/files/display/library_configuring.jpg 2>/dev/null
+
+    msg_info "Waiting 60 seconds for system to stabilize..."
+    sleep 60
+
+    cd /root/install/setup_library
+    source /root/.profile
+
+    msg_step "Removing auto-resume crontab..."
+    rm -f /var/spool/cron/crontabs/root
+
+    msg_step "Running Ansible playbook (this can take a while)..."
+    separator
+    /root/.local/bin/ansible-playbook 01_install_ansible.yml | /usr/bin/tee /root/installplay.log
+
+    # Verify the playbook completed successfully
+    if test -e "/etc/systemd/system/shutdown_library.service"; then
+        msg_ok "Ansible playbook completed successfully"
+        touch /root/.secondboot
+    else
+        msg_error "Ansible playbook may not have completed!"
+        msg_warn "shutdown_library.service not found"
+        msg_info "Will retry on next boot"
+        echo "* * * * * /root/bootstrap --auto 2>&1 | /usr/bin/tee -a /root/install.log" > /var/spool/cron/crontabs/root
+        chmod 0600 /var/spool/cron/crontabs/root
+    fi
+
+    separator
+    echo -e "${GREEN}"
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  Second Boot Complete!                           ║"
+    echo "║  Rebooting for final configuration...            ║"
+    echo "╚══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    sleep 5
+    /usr/sbin/shutdown -r now
+}
+
+###########################################################################
+# Third Boot
+###########################################################################
+do_third_boot() {
+    if test -e "/root/.thirdboot"; then
+        msg_warn "Third boot has already been completed"
+        if ! confirm "Run again anyway?"; then
+            return
+        fi
+    fi
+
+    if ! test -e "/root/.secondboot"; then
+        msg_error "Second boot has not been completed yet!"
+        pause
+        return
+    fi
+
+    msg_step "Starting Third Boot - Final Configuration"
+    separator
+
+    touch /root/.thirdboot
+
+    msg_step "Removing auto-resume crontab..."
+    rm -f /var/spool/cron/crontabs/root
+    systemctl restart cron
+
+    msg_info "Displaying read-only notice on TFT..."
+    /usr/bin/fbi -T 2 -d /dev/fb0 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
+    /usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
+
+    msg_step "Removing preconfigured network connection..."
+    rm -fv /etc/NetworkManager/system-connections/preconfigured.nmconnection
+
+    separator
+    echo -e "${GREEN}"
+    echo "╔══════════════════════════════════════════════════╗"
+    echo "║  Installation Complete!                          ║"
+    echo "║  Your Library configuration is compleate.        ║"
+    echo "║  System will reboot into setup  mode.            ║"
+    echo "║  loot at tft display for further messages.       ║"
+    echo "╚══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+
+    sleep 5
+    /usr/sbin/shutdown -r now
+}
+
+###########################################################################
+# Reset Boot Flags
+###########################################################################
+reset_flags() {
+    msg_warn "This will clear all boot progress flags!"
+    if confirm "Reset all boot flags?"; then
+        rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot
+        msg_ok "All boot flags cleared"
+    else
+        msg_info "Reset cancelled"
+    fi
+    pause
+}
+
+###########################################################################
+# View Log
+###########################################################################
+view_log() {
+    if test -e "/root/install.log"; then
+        less /root/install.log
+    elif test -e "/root/installplay.log"; then
+        less /root/installplay.log
+    else
+        msg_warn "No install log found"
+        pause
+    fi
+}
+
+###########################################################################
+# Auto-run mode (called from crontab after reboot)
+###########################################################################
+auto_run() {
+    # Check uptime window
+    if ! check_uptime; then
+        exit 0
+    fi
+
+    # Determine which boot stage to run
+    if ! test -e "/root/.firstboot"; then
+        # Should not happen in auto mode, but handle gracefully
+        exit 0
+    elif ! test -e "/root/.secondboot"; then
+        do_second_boot
+    elif ! test -e "/root/.thirdboot"; then
+        do_third_boot
+    fi
+    exit 0
+}
+
+###########################################################################
+# Main Program
+###########################################################################
+
+# Handle --auto flag for crontab execution
+if [ "$1" == "--auto" ]; then
+    auto_run
+fi
+
+# Interactive mode
+DISP=""
+INSTALL_PASSWORD=""
+
+while true; do
+    show_main_menu
+    read -r choice
+    case $choice in
+        1)
+            # Fresh Install
+            show_display_menu
+            read -r disp_choice
+            case $disp_choice in
+                1)
+                    DISP="1"
+                    msg_ok "Selected: TFT 3.5\""
+                    ;;
+                2)
+                    DISP="0"
+                    msg_ok "Selected: TFT 2.4\""
+                    ;;
+                3)
+                    DISP="hdmi"
+                    prompt_hdmi_resolution
+                    msg_ok "Selected: HDMI (status messages), ${LIBRARY_HDMI_RES}"
+                    ;;
+                4)
+                    DISP="desktop"
+                    prompt_hdmi_resolution
+                    msg_ok "Selected: HDMI desktop (Pi desktop + kiosk browser), ${LIBRARY_HDMI_RES}"
+                    ;;
+                b|B)
+                    continue
+                    ;;
+                *)
+                    msg_error "Invalid selection"
+                    pause
+                    continue
+                    ;;
+            esac
+            separator
+            echo
+            msg_info "Configuration Summary:"
+            case "$DISP" in
+                1)       DISP_DESC="TFT 3.5\"" ;;
+                0)       DISP_DESC="TFT 2.4\"" ;;
+                hdmi)    DISP_DESC="HDMI status messages (${LIBRARY_HDMI_RES:-auto})" ;;
+                desktop) DISP_DESC="HDMI desktop + kiosk (${LIBRARY_HDMI_RES:-auto})" ;;
+                *)       DISP_DESC="Unknown" ;;
+            esac
+            echo -e "  Display: ${CYAN}${DISP_DESC}${NC}"
+            echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
+            echo
+            if confirm "Proceed with fresh installation?"; then
+                do_first_boot
+            fi
+            ;;
+        2)
+            # Reinstall
+            do_reinstall
+            ;;
+        3)
+            # Resume
+            if ! test -e "/root/.firstboot"; then
+                msg_info "No previous install found. Use Fresh Install instead."
+                pause
+            elif ! test -e "/root/.secondboot"; then
+                msg_info "Resuming from Second Boot stage..."
+                if confirm "Continue with Second Boot?"; then
+                    do_second_boot
+                fi
+            elif ! test -e "/root/.thirdboot"; then
+                msg_info "Resuming from Third Boot stage..."
+                if confirm "Continue with Third Boot?"; then
+                    do_third_boot
+                fi
+            else
+                msg_ok "Installation already complete!"
+                pause
+            fi
+            ;;
+        4)
+            # Status
+            show_status
+            ;;
+        5)
+            # Advanced
+            while true; do
+                show_advanced_menu
+                read -r adv_choice
+                case $adv_choice in
+                    1)
+                        show_display_menu
+                        read -r disp_choice
+                        case $disp_choice in
+                            1) DISP="1" ;;
+                            2) DISP="0" ;;
+                            3) DISP="hdmi" ;;
+                            4) DISP="desktop" ;;
+                            *) continue ;;
+                        esac
+                        get_password
+                        do_first_boot
+                        ;;
+                    2)
+                        do_second_boot
+                        ;;
+                    3)
+                        do_third_boot
+                        ;;
+                    4)
+                        reset_flags
+                        ;;
+                    5)
+                        view_log
+                        ;;
+                    b|B)
+                        break
+                        ;;
+                    *)
+                        msg_error "Invalid selection"
+                        pause
+                        ;;
+                esac
+            done
+            ;;
+        q|Q)
+            echo -e "${GREEN}Goodbye!${NC}"
+            exit 0
+            ;;
+        *)
+            msg_error "Invalid selection"
+            pause
+            ;;
+    esac
+done

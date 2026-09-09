@@ -1,0 +1,41 @@
+---
+- name: refresh images
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    target_ip: library
+    podman_images:
+      - hotspot.tar
+      - webserver.tar
+      - wiki.tar
+      - music.tar
+      - calibre-web.tar
+      # - rasbase.tar
+      # - update_display.tar
+
+  tasks:
+    - name: remove pods
+      shell: |
+        podman stop -a -i -t 20
+        #podman rmi -a -f -i
+      become: true
+      ignore_errors: true
+
+#################################
+# load podman images TODO this needs sumfixin
+#################################
+    - name: "podman load images"
+      shell: |
+        /usr/local/bin/displayit loading_{{ ansible_loop.index0 }}.jpg
+        #podman images | grep {{ (item.split('.')).0 }} >/dev/null || podman load -i /root/install/setup_library/files/containers/{{ item }} && echo '{{ item }} already installed'
+      register: podman_load
+      become: true
+      loop: "{{ podman_images }}"
+      loop_control:
+        extended: true
+
+    - debug:
+        msg:
+          - "{{ (podman_load | json_query('results[*].stdout_lines[0]')) }}"
+

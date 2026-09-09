@@ -1,0 +1,29 @@
+# Containerfile for the Library wiki container
+# This container runs kiwix-serve to provide offline Wikipedia and other
+# ZIM-format wiki content via a web interface on port 6902.
+
+# Base image - switch between rasbase (Debian 11 bullseye) and
+# rasbase_master (Debian 13 trixie) by passing --build-arg BASE_IMAGE=...
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+# Copy the pre-compiled kiwix-tools binary archive (aarch64 static builds)
+COPY kiwix-tools_linux-aarch64-3.5.0-1.tar.gz /tmp/kiwix-tools.tar.gz
+
+# Extract kiwix binaries to /usr/local/bin and clean up
+RUN tar -xzf /tmp/kiwix-tools.tar.gz -C /tmp && \
+    cp /tmp/kiwix-tools_linux-aarch64-3.5.0-1/kiwix-serve /usr/local/bin/ && \
+    cp /tmp/kiwix-tools_linux-aarch64-3.5.0-1/kiwix-manage /usr/local/bin/ && \
+    cp /tmp/kiwix-tools_linux-aarch64-3.5.0-1/kiwix-search /usr/local/bin/ && \
+    chmod +x /usr/local/bin/kiwix-* && \
+    rm -rf /tmp/kiwix-tools*
+
+# Copy the start script
+COPY start_server /root/start_server
+RUN chmod +x /root/start_server
+
+# Expose kiwix-serve port
+EXPOSE 6902
+
+# Start kiwix-serve with the library XML, then keep container alive
+CMD ["/bin/sh", "-c", "kiwix-serve -v -p 6902 --nodatealiases --library /wiki/wiki.xml;sleep infinity"]

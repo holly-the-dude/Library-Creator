@@ -1,0 +1,76 @@
+# Containerfile for the Library calibre-web container
+# This container runs Calibre-Web (a web-based e-book reader) and includes
+# calibredb for managing the Calibre library (adding/removing books).
+# Serves the web interface on port 8083.
+
+# Base image - switch between rasbase (Debian 11 bullseye) and
+# rasbase_master (Debian 13 trixie) by passing --build-arg BASE_IMAGE=...
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+# Install system packages:
+#   calibre        - provides calibredb CLI for library management (add/remove books)
+#   python3-pip    - pip installer for calibre-web Python package
+#   python3-lxml   - XML/HTML processing (calibre-web dependency, faster as system pkg)
+#   imagemagick    - image processing for book covers (required by Wand)
+#   ghostscript    - PDF rendering for cover extraction
+#   python3-dev    - headers needed to compile some pip dependencies
+#   gcc            - compiler for pip packages with C extensions
+#   libffi-dev     - foreign function interface (needed by cryptography)
+#   libxml2-dev    - XML C library headers (needed by lxml if pip rebuilds it)
+#   libxslt1-dev   - XSLT headers (needed by lxml if pip rebuilds it)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        calibre \
+        python3-pip \
+        python3-lxml \
+        imagemagick \
+        ghostscript \
+        python3-dev \
+        gcc \
+        libffi-dev \
+        libxml2-dev \
+        libxslt1-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install calibre-web via pip
+# calibreweb provides the 'cps' entry point (Calibre-Web Python Server)
+RUN pip3 install --break-system-packages calibreweb==0.6.27
+
+# Clean up build dependencies to reduce image size (optional layer)
+RUN apt-get remove -y python3-dev gcc libffi-dev libxml2-dev libxslt1-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy startup wrapper that pre-configures the library path
+COPY start-calibre-web.sh /usr/local/bin/start-calibre-web.sh
+RUN chmod +x /usr/local/bin/start-calibre-web.sh
+
+# Pre-generate app.db with library path set to /books so first boot works
+# without requiring manual setup through the web UI.
+# Also enable anonymous browsing so the main page responds without login
+# (required for the ansible health check: grep '<title>Calibre-Web').
+# Start cps briefly to let it create the database schema, then configure it.
+RUN /usr/local/bin/cps & \
+    CPS_PID=$! && \
+    for i in $(seq 1 15); do \
+        [ -f /root/.calibre-web/app.db ] && sleep 2 && break; \
+        sleep 1; \
+    done && \
+    kill $CPS_PID 2>/dev/null; \
+    wait $CPS_PID 2>/dev/null; \
+    python3 -c "import sqlite3; \
+conn = sqlite3.connect('/root/.calibre-web/app.db'); \
+c = conn.cursor(); \
+c.execute('UPDATE settings SET config_calibre_dir = \"/books\", config_anonbrowse = 1'); \
+conn.commit(); conn.close(); \
+print('Library path set to /books, anonymous browsing enabled')"
+
+# Expose Calibre-Web port
+EXPOSE 8083
+
+# Default command: start Calibre-Web server
+# The ansible playbook invokes: /usr/local/bin/cps
+CMD ["/usr/local/bin/cps"]

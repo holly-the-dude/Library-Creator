@@ -1,0 +1,1 @@
+setup_library/files/** !text !filter !merge !diff

@@ -1,0 +1,13 @@
+---
+- hosts: localhost
+  # remote_user: root
+  gather_facts: no
+
+  tasks:
+    - name: include my great role
+      include_role:
+        name: update_display
+      vars:
+        color: yellow # or use #FFFFFF
+        message: "This is a test"
+        border: 'border: 1px solid #AAAAFF'

@@ -1,0 +1,36 @@
+# Containerfile for the Library hotspot container
+# This container creates a WiFi access point (SSID: library) and provides
+# DHCP/DNS so clients can connect to the library system without an existing network.
+
+# Base image - switch between rasbase (Debian 11 bullseye) and
+# rasbase_master (Debian 13 trixie) by passing --build-arg BASE_IMAGE=...
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+# Install system packages:
+#   hostapd    - WiFi access point daemon (broadcasts SSID)
+#   dnsmasq    - lightweight DNS/DHCP server for hotspot clients
+#   iproute2   - 'ip' command for interface and address management
+#   python3    - runtime for hotspot.py management script
+#   procps     - pgrep/pkill for process verification during retries
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        hostapd \
+        dnsmasq \
+        iproute2 \
+        python3 \
+        procps && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the main hotspot script
+COPY hotspot.py /root/hotspot.py
+
+# Copy the shell wrapper script
+COPY hotspot /root/hotspot
+
+# The container needs host network access and privileged mode at runtime
+# for wlan0 access — no ports to expose since we use --network=host
+
+# Start hotspot.py (brings up wlan0, starts hostapd + dnsmasq) then keep alive
+CMD ["/bin/sh", "-c", "/usr/bin/python3 /root/hotspot.py;sleep infinity"]

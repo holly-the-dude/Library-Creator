@@ -1,0 +1,22 @@
+---
+# tasks file for helloworld
+
+- name: send message to display
+  vars:
+    color: yellow # or use #FFFFFF
+    message: "Hotspot Started"
+    border: 'border: 1px solid #FFFFFF'
+  uri:
+    url: "http://{{ dhost }}:6901/upload-text"
+    method: POST
+    body: >
+      html_data=<span style="color:{{ color }}; {{ border }};">{{ message }}</span>'
+    body_format: raw
+    status_code:
+      - -1
+      - 200
+      - 500
+  register: sendmessage
+  become: true
+
+- debug: var=sendmessage

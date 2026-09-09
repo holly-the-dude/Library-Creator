@@ -1,0 +1,10 @@
+[Unit]
+Description=Library Shutdown Service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/library_shutdown.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,174 @@
+#!/usr/bin/python3
+import os
+import requests
+from urllib.parse import quote
+
+# Function to get the file count in a directory
+def get_file_count(path):
+    return sum([len(files) for _, _, files in os.walk(path)])
+
+# Paths
+library_path = "/library/library"
+web_path = "/library/web"
+file_count_file = os.path.join(web_path, "file_count.txt")
+
+# Get current file count
+current_file_count = get_file_count(library_path)
+
+# Read previous file count if it exists
+previous_file_count = None
+if os.path.exists(file_count_file):
+    with open(file_count_file, "r") as f:
+        previous_file_count = int(f.read().strip())
+
+# If the file count is the same as the previous run, skip HTML generation
+if previous_file_count is not None and current_file_count == previous_file_count:
+    print("File count has not changed. Skipping HTML generation.")
+else:
+    print("File count has changed. Generating new HTML files.")
+
+    # Save the current file count for future reference
+    with open(file_count_file, "w") as f:
+        f.write(str(current_file_count))
+
+    # Remove existing files
+    os.system("rm -f /library/web/*")
+
+    def check_kiwix():
+        try:
+            response = requests.get("http://10.88.0.200:6902", timeout=5)
+            if "Kiwix" in response.text:
+                return '<a style="font-size: 24px"; href="http://10.1.1.1:6902" target="_blank">Wiki</a> |'
+        except requests.RequestException:
+            pass
+        return ""
+
+    def check_music():
+        try:
+            response = requests.get("http://10.1.1.1:9099", timeout=50)
+            print(response)
+            if "Load Basic HTML" in response.text:
+                return '<a style="font-size: 24px"; href="http://10.1.1.1:9099" target="_blank">Music</a> |'
+        except requests.RequestException:
+            pass
+        return ""
+
+
+    wikifound = check_kiwix()
+    print(wikifound)
+
+    musicfound = check_music()
+    print(musicfound) 
+
+    # Check if nginx is running
+    nginx_running = os.system("pgrep nginx")
+
+    # If nginx is not running, start it
+    if nginx_running != 0:
+        os.system("nginx")
+
+    # NGINX config
+    nginx_config = f"""
+    server {{
+        listen 80;
+        server_name localhost library library.local 10.1.1.1;
+        #return 301 http://library; # or http://10.1.1.1
+
+        location / {{
+            autoindex on;
+            root /library/web;
+            index index.html;
+        }}
+
+        location /library {{
+            autoindex on;
+            alias /library;
+        }}
+        location /cgi-bin/ {{
+            gzip off;
+            root /root/cgi;  # Adjust this to your setup
+            fastcgi_pass unix:/var/run/fcgiwrap.socket;
+            include /etc/nginx/fastcgi_params;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        }}
+    }}
+
+    """
+    with open("/etc/nginx/sites-available/default", "w") as f:
+        f.write(nginx_config)
+
+    os.system("nginx -s reload")
+
+    # Function to build HTML tree structure for files
+    def build_html_tree(path, base_url="/library/"):
+        output = ""
+        for item in sorted(os.listdir(path)):
+            # Skip hidden or system files
+            if item.startswith("._") or item.startswith("."):
+                continue
+
+            full_path = os.path.join(path, item)
+
+            if os.path.isdir(full_path):
+                subdir_content = build_html_tree(full_path, base_url + quote(item) + '/')
+                local_html_structure = html_structure.format(tree_content=subdir_content, wikifound=wikifound, musicfound=musicfound)
+                with open(f"/library/web/{item}.html", "w") as f:
+                    f.write(local_html_structure)
+                output += f'<tr><td><a href="{quote(item)}.html">{item}</a></td></tr>'
+            else:
+                link_name = item.replace("_", " ").rsplit(".", 1)[0]
+                file_url = "/library" + base_url + quote(item)
+                output += f'<tr><td><a href="{file_url}" target="_blank">{link_name}</a></td></tr>'
+        return output
+
+    # Generate the HTML with table and styles
+    html_structure = """
+    <html>
+    <head>
+        <title>Library Index</title>
+        <style>
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+            }}
+            td, th {{
+                border: 1px solid #ddd;
+                padding: 8px;
+                font-size: 24px; /* Set font size to 24 */
+                font-weight: bold; /* Make text bold */
+            }}
+            tr:nth-child(even) {{
+                background-color: #f2f2f2;
+            }}
+            tr:hover {{
+                background-color: #ddd;
+            }}
+        </style>
+    </head>
+    <body>
+        <div>
+            <a style="font-size: 24px"; href="/">Home</a> | 
+            {wikifound}
+            {musicfound}
+            <a style="font-size: 24px"; href="http://10.1.1.1:9999">Shutdown</a>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Categories</th>
+                </tr>
+            </thead>
+            <tbody>
+                {tree_content}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+
+    tree_content = build_html_tree(library_path)
+    html_content = html_structure.format(tree_content=tree_content, wikifound=wikifound, musicfound=musicfound)
+
+    with open("/library/web/index.html", "w") as f:
+        f.write(html_content)
+

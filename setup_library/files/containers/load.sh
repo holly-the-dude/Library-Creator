@@ -1,0 +1,9 @@
+echo loading___calibre-web.tar;podman load -i calibre-web.tar
+echo loading___hotspot.tar;podman load -i hotspot.tar
+echo loading___load.sh;podman load -i load.sh
+echo loading___music.tar;podman load -i music.tar
+echo loading___rasbase.tar;podman load -i rasbase.tar
+echo loading___update_display_latest.tar;podman load -i update_display_latest.tar
+echo loading___update_display.tar;podman load -i update_display.tar
+echo loading___webserver.tar;podman load -i webserver.tar
+echo loading___wiki.tar;podman load -i wiki.tar

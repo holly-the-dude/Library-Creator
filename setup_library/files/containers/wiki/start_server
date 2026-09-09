@@ -1,0 +1,2 @@
+#!/bin/sh
+kiwix-serve -v -p 6902 --nodatealiases --library /wiki/wiki.xml

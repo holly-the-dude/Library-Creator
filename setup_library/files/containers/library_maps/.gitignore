@@ -1,0 +1,9 @@
+# Runtime / generated data — never commit these.
+# GraphHopper rebuilds its routing graph from the OSM extract at runtime, and
+# on the Pi the graph cache lives on the USB at /Library/maps/graph-cache.
+data/
+work/
+pmtiles/*.pmtiles
+
+# macOS cruft
+.DS_Store

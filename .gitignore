@@ -1,0 +1,8 @@
+# Large USB base images — not needed in the repo, too big for GitHub
+# (distribute via releases / external storage if ever needed)
+setup_library/files/usb_base/
+setup_library/files/**/usb[0-9]*
+
+# Editor / OS junk
+*.swp
+.DS_Store

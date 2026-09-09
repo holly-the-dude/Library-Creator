@@ -1,0 +1,62 @@
+#############################
+# check for usb library usb and mount it
+#############################
+- name: get usb devices
+  shell: |
+    lsblk --json -i -o NAME,FSTYPE,LABEL
+  become: true
+  register: usbdev
+
+- name: set fact to usb
+  when: 'usbdev is search("Library_USB")'
+  set_fact:
+    usbdisk: "{{ ([(usbdev.stdout|from_json)]|json_query('[*].blockdevices[*].children[?label==`Library_USB`].name') |flatten)[0] }}"
+
+- name: set fact to usb missing
+  when: 'usbdev is not search("Library_USB")'
+  set_fact:
+    usbdisk: "Missing"
+
+- debug:
+    msg:
+    - "{{ usbdisk }}"
+    - "{{ [(usbdev.stdout|from_json)]|json_query('[*].blockdevices[*].children[?label==`Library_USB`]') |flatten }}"
+
+- name: show missing
+  when: '"Missing" in usbdisk'
+  shell: |
+    displayit usb_missing_verbose.jpg
+  register: shellit
+  become: true
+
+- debug: var=shellit
+
+- name: Wait till inserted block
+  when: '"Missing" in usbdisk'
+  block:
+  - name: Wait till inserted
+    shell: |
+      lsblk -i -o NAME,FSTYPE,LABEL|grep Library_USB && echo found   || echo Missing
+      displayit usb_missing_verbose.jpg
+    register: waitshell
+    ignore_errors: true
+    until: '"found" in waitshell.stdout'
+    delay: 5
+    retries: 1000
+    become: true
+
+  - name: show starting
+    when: '"found" in waitshell.stdout'
+    shell: |
+      displayit library_starting.jpg
+    register: shellit
+    become: true
+
+- name: mount the usb
+  shell: |
+    mount -t exfat /dev/sda1 /Library
+    df -h /Library
+  register: shellmount
+  become: true
+
+- debug: var=shellmount.stdout_lines

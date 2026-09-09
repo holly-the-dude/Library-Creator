@@ -1,0 +1,31 @@
+# Containerfile for the Library music container
+# This container runs LMS (Lightweight Music Server) to provide a web-based
+# music streaming interface on port 5082.
+#
+# Base image: docker.io/epoupon/lms (Alpine-based)
+# Customizations:
+#   - http-headers authentication (auto-login via reverse proxy)
+#   - Pre-filled login form with music/music credentials (fallback for direct access)
+#   - Welcome message showing login credentials
+#   - PAM configuration for lms
+#   - Runs as root to allow write access to /var/lms
+
+FROM docker.io/epoupon/lms:latest
+
+USER root
+
+# Copy customized LMS config (uses http-headers auth backend)
+COPY lms.conf /etc/lms.conf
+
+# Copy customized login page (pre-fills username/password with "music")
+COPY approot/login.xml /usr/share/lms/approot/login.xml
+
+# Copy customized messages (welcome text shows credentials)
+COPY approot/messages.xml /usr/share/lms/approot/messages.xml
+
+# Copy PAM configuration for lms
+COPY pam_lms /usr/share/lms/lms
+
+EXPOSE 5082
+
+ENTRYPOINT ["/usr/bin/lms"]

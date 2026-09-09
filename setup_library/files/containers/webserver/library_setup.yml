@@ -1,0 +1,102 @@
+# =============================================================================
+# Library System Configuration
+# =============================================================================
+# This file configures the library webserver and all related containers.
+# It is read by library.py to dynamically build the web interface.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Webserver Configuration
+# Settings specific to the webserver container and nginx
+# -----------------------------------------------------------------------------
+webserver:
+  library_path: /library/library
+  web_path: /library/web
+  host_ip: 10.1.1.1
+  nginx:
+    listen_port: 80
+    server_names:
+      - localhost
+      - library
+      - library.local
+      - 10.1.1.1
+  shutdown_port: 9999
+
+# -----------------------------------------------------------------------------
+# Services
+# These are checked by the webserver and displayed in the navigation bar
+# if they respond correctly.
+# -----------------------------------------------------------------------------
+services:
+  - name: wiki
+    display_name: Wiki
+    internal_ip: 10.88.0.200
+    internal_port: 6902
+    external_url: http://10.1.1.1:6902
+    check_text: Kiwix
+    timeout: 5
+
+  - name: music
+    display_name: Music
+    internal_ip: 10.88.0.210
+    internal_port: 5082
+    external_url: http://10.1.1.1/music
+    check_text: ""
+    timeout: 110
+
+  - name: ebook
+    display_name: eBook Reader
+    internal_ip: 10.88.0.211
+    internal_port: 8083
+    external_url: http://10.1.1.1:8083
+    check_text: Calibre-Web
+    timeout: 10
+
+  - name: maps
+    display_name: Maps
+    internal_ip: 10.88.0.212
+    internal_port: 8080
+    external_url: http://10.1.1.1:8080
+    check_text: Library Maps
+    timeout: 5
+
+# -----------------------------------------------------------------------------
+# Container Definitions
+# Used by the bootstrap/setup scripts to create and manage containers.
+# -----------------------------------------------------------------------------
+containers:
+  - name: wiki
+    ports: '6902:6902'
+    ip: 10.88.0.200
+    drive_map: '/Library/wiki:/wiki'
+    command: '/bin/sh -c kiwix-serve -v -p 6902 --nodatealiases --library /wiki/wiki.xml'
+
+  - name: hotspot
+    ports: null
+    ip: null
+    drive_map: '/dev/bus/usb:/dev/bus/usb'
+    command: '/usr/bin/python3 /root/hotspot.py; sleep infinity'
+
+  - name: music
+    ports: '9099:5082'
+    ip: 10.88.0.210
+    drive_map: '/Library/music/:/music/:ro -v /Library/.music_data:/var/lms'
+    command: ''
+
+  - name: ebook
+    ports: '8083:8083'
+    ip: 10.88.0.211
+    drive_map: '/Library/calibre/books:/books:rw'
+    command: '/usr/local/bin/cps'
+
+  - name: webserver
+    ports: '80:80'
+    ip: 10.88.0.201
+    drive_map: '/Library:/library'
+    command: '/usr/bin/python3 /root/library.py;sleep infinity'
+
+  - name: library_maps
+    ports: '8080:8080'
+    ip: 10.88.0.212
+    drive_map: '/Library/maps:/storage/maps'
+    command: ''

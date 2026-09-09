@@ -1,0 +1,15 @@
+[Unit]
+Description=safe-to-power-off image
+DefaultDependencies=no
+After=umount.target
+#Before=final.target
+Before=halt.target
+
+[Service]
+ExecStart=/bin/true
+ExecStop=/usr/local/bin/displayit library_shutting_down.jpg
+Type=oneshot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

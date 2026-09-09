@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Library Maps</title>
+  <!-- Vendored locally so the viewer works fully offline (no internet/CDN needed).
+       Served from the image at /var/www/html/vendor/. -->
+  <script src="vendor/maplibre-gl.js"></script>
+  <script src="vendor/pmtiles.js"></script>
+  <script src="vendor/basemaps.js"></script>
+  <link rel="stylesheet" href="vendor/maplibre-gl.css">
+  <style>
+    body { margin: 0; padding: 0; font-family: system-ui, sans-serif; }
+    #map { width: 100%; height: 100vh; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 14px;
+    }
+    #controls select {
+      padding: 4px 8px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    #controls label {
+      font-weight: 500;
+      margin-right: 8px;
+    }
+    #gps-control {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 14px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    #gps-control input {
+      padding: 4px 8px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      width: 90px;
+    }
+    #gps-control button {
+      padding: 4px 10px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #4a90d9;
+      color: white;
+      cursor: pointer;
+    }
+    #gps-control button:hover {
+      background: #357abd;
+    }
+    #gps-error {
+      position: absolute;
+      top: 55px;
+      right: 10px;
+      z-index: 1000;
+      background: #fee;
+      color: #c00;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 13px;
+      display: none;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    }
+    #search-control {
+      position: absolute;
+      top: 55px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 10px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 14px;
+      width: 320px;
+    }
+    #search-control .search-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    #search-control input {
+      padding: 6px 10px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      flex: 1;
+      min-width: 0;
+    }
+    #search-control button {
+      padding: 6px 12px;
+      font-size: 14px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #4a90d9;
+      color: white;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #search-control button:hover {
+      background: #357abd;
+    }
+    #search-hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 6px;
+      line-height: 1.3;
+    }
+    #search-results {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 8px;
+      display: none;
+    }
+    #search-results .result-item {
+      padding: 6px 8px;
+      cursor: pointer;
+      border-radius: 3px;
+      font-size: 13px;
+      border-bottom: 1px solid #eee;
+    }
+    #search-results .result-item:hover {
+      background: #eef4ff;
+    }
+    #search-results .result-item .result-name {
+      font-weight: 500;
+      color: #333;
+    }
+    #search-results .result-item .result-type {
+      font-size: 11px;
+      color: #888;
+      margin-left: 6px;
+    }
+    #search-results .no-results {
+      padding: 8px;
+      color: #999;
+      font-size: 13px;
+      font-style: italic;
+    }
+    #loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      font-size: 16px;
+      z-index: 2000;
+    }
+
+    /* --- Routing panel (bottom-left) --- */
+    #route-control {
+      position: absolute;
+      bottom: 20px;
+      left: 10px;
+      z-index: 1000;
+      background: white;
+      padding: 12px 14px;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 14px;
+      width: 320px;
+      max-width: 80vw;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+    #route-control h3 { margin: 0 0 8px; font-size: 14px; }
+    #route-control .rrow { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+    #route-control input {
+      padding: 6px 8px; font-size: 13px; border-radius: 4px;
+      border: 1px solid #ccc; flex: 1; min-width: 0;
+    }
+    #route-control button {
+      padding: 6px 10px; font-size: 13px; border-radius: 4px;
+      border: 1px solid #ccc; background: #fff; cursor: pointer; white-space: nowrap;
+    }
+    #route-control button.pin.active { background: #4a90d9; color: #fff; border-color: #357abd; }
+    #route-control button.primary { background: #2e7d32; color: #fff; border-color: #266a2a; font-weight: 600; }
+    #route-control button.primary:hover { background: #266a2a; }
+    #route-status { font-size: 12px; color: #555; margin: 4px 0; }
+    #route-summary { font-weight: 600; margin: 6px 0; }
+    #route-directions { padding-left: 18px; margin: 6px 0 0; }
+    #route-directions li { margin: 5px 0; font-size: 12.5px; }
+
+    /* --- Layers panel (bottom-right) --- */
+    #layers-control {
+      position: absolute;
+      bottom: 20px;
+      right: 10px;
+      z-index: 1000;
+      background: white;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-size: 14px;
+      width: 190px;
+    }
+    #layers-control .lc-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 12px; cursor: pointer; font-weight: 600; user-select: none;
+    }
+    #layers-control .lc-body { padding: 4px 12px 10px; display: none; }
+    #layers-control.open .lc-body { display: block; }
+    #layers-control label {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 0; font-weight: 400; cursor: pointer;
+    }
+    #layers-control input[type="checkbox"] { width: 16px; height: 16px; }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading map tiles...</div>
+  <div id="gps-control">
+    <input type="text" id="gps-lat" placeholder="Lat" aria-label="Latitude">
+    <input type="text" id="gps-lon" placeholder="Lon" aria-label="Longitude">
+    <button id="gps-go" aria-label="Go to coordinates">Go</button>
+  </div>
+  <div id="gps-error"></div>
+  <div id="controls">
+    <label for="state-select">Map:</label>
+    <select id="state-select"></select>
+  </div>
+  <div id="search-control">
+    <div class="search-row">
+      <input type="text" id="search-input" placeholder="Search places, streets, POIs..." aria-label="Search address or place">
+      <button id="search-btn" aria-label="Search">Search</button>
+    </div>
+    <div id="search-hint">Searches loaded map tiles. Zoom in closer for street-level results.</div>
+    <div id="search-results"></div>
+  </div>
+  <div id="map"></div>
+
+  <!-- Routing panel: pick a start and destination (by lat,lon, by clicking the
+       map, or from a search result) and calculate a car route locally via
+       GraphHopper. No geocoder/Photon needed. -->
+  <div id="route-control">
+    <h3>Directions</h3>
+    <div class="rrow">
+      <input type="text" id="route-start" placeholder="Start (lat,lon)" aria-label="Start point">
+      <button class="pin" id="route-start-pin" title="Click the map to set start">Map</button>
+    </div>
+    <div class="rrow">
+      <input type="text" id="route-dest" placeholder="Destination (lat,lon)" aria-label="Destination point">
+      <button class="pin" id="route-dest-pin" title="Click the map to set destination">Map</button>
+    </div>
+    <div class="rrow">
+      <button class="primary" id="route-go">Route</button>
+      <button id="route-clear">Clear</button>
+    </div>
+    <div id="route-status">Set a start and destination, then click Route.</div>
+    <div id="route-summary"></div>
+    <ol id="route-directions"></ol>
+  </div>
+
+  <!-- Layer on/off toggle: groups the map style's layers into categories and
+       shows/hides each via visibility. -->
+  <div id="layers-control">
+    <div class="lc-head" id="layers-head"><span>Layers</span><span id="layers-caret">▸</span></div>
+    <div class="lc-body" id="layers-body"></div>
+  </div>
+
+  <script>
+    const STATE_CENTERS = {
+      alabama: [-86.9, 32.8, 7],
+      alaska: [-153.5, 64.2, 4],
+      arizona: [-111.9, 34.3, 7],
+      arkansas: [-92.4, 34.8, 7],
+      california: [-119.4, 37.2, 6],
+      colorado: [-105.5, 39.0, 7],
+      connecticut: [-72.7, 41.6, 9],
+      delaware: [-75.5, 39.0, 9],
+      florida: [-81.7, 28.1, 7],
+      georgia: [-83.5, 32.7, 7],
+      hawaii: [-155.5, 20.0, 7],
+      idaho: [-114.7, 44.1, 7],
+      illinois: [-89.4, 40.0, 7],
+      indiana: [-86.3, 39.8, 7],
+      iowa: [-93.5, 42.0, 7],
+      kansas: [-98.3, 38.5, 7],
+      kentucky: [-85.8, 37.8, 7],
+      louisiana: [-91.9, 31.0, 7],
+      maine: [-69.2, 45.4, 7],
+      maryland: [-76.6, 39.0, 8],
+      massachusetts: [-71.8, 42.2, 8],
+      michigan: [-84.7, 44.3, 7],
+      minnesota: [-94.3, 46.3, 7],
+      mississippi: [-89.7, 32.7, 7],
+      missouri: [-92.5, 38.4, 7],
+      montana: [-109.6, 47.0, 7],
+      nebraska: [-99.8, 41.5, 7],
+      nevada: [-116.6, 39.3, 7],
+      new_hampshire: [-71.6, 43.7, 8],
+      new_jersey: [-74.7, 40.2, 8],
+      new_mexico: [-106.0, 34.5, 7],
+      new_york: [-75.5, 43.0, 7],
+      north_carolina: [-79.8, 35.6, 7],
+      north_dakota: [-100.5, 47.5, 7],
+      ohio: [-82.8, 40.4, 7],
+      oklahoma: [-97.5, 35.5, 7],
+      oregon: [-120.5, 44.0, 7],
+      pennsylvania: [-77.6, 41.0, 7],
+      rhode_island: [-71.5, 41.7, 10],
+      south_carolina: [-80.9, 33.8, 7],
+      south_dakota: [-100.2, 44.4, 7],
+      tennessee: [-86.3, 35.8, 7],
+      texas: [-99.3, 31.5, 6],
+      utah: [-111.7, 39.3, 7],
+      vermont: [-72.6, 44.0, 8],
+      virginia: [-79.4, 37.5, 7],
+      washington: [-120.7, 47.4, 7],
+      west_virginia: [-80.6, 38.6, 7],
+      wisconsin: [-89.8, 44.6, 7],
+      wyoming: [-107.5, 43.0, 7]
+    };
+
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol("pmtiles", protocol.tile);
+
+    // Discover all available pmtiles files from the server directory listing
+    async function getAvailableFiles() {
+      try {
+        const resp = await fetch(`${window.location.origin}/pmtiles/`);
+        if (!resp.ok) throw new Error('Directory listing unavailable');
+        const listing = await resp.json();
+        return listing
+          .filter(entry => entry.type === 'file' && entry.name.endsWith('.pmtiles'))
+          .map(entry => entry.name)
+          .sort();
+      } catch(e) {
+        // Fallback: check known states individually
+        const available = [];
+        const checks = Object.keys(STATE_CENTERS).map(async (state) => {
+          const url = `${window.location.origin}/pmtiles/${state}_2025-12.pmtiles`;
+          try {
+            const resp = await fetch(url, { method: 'HEAD' });
+            if (resp.ok) available.push(`${state}_2025-12.pmtiles`);
+          } catch(e) {}
+        });
+        await Promise.all(checks);
+        return available.sort();
+      }
+    }
+
+    // Derive a display name from a pmtiles filename
+    function displayName(filename) {
+      return filename
+        .replace(/\.pmtiles$/, '')
+        .replace(/_\d{4}-\d{2}$/, '')  // strip date suffix like _2025-12
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, c => c.toUpperCase());
+    }
+
+    // Get the map key (state name) from a filename for center lookup
+    function stateKey(filename) {
+      return filename
+        .replace(/\.pmtiles$/, '')
+        .replace(/_\d{4}-\d{2}$/, '');
+    }
+
+    // The Natural Earth roads file uses a custom schema (layer "roads" with
+    // fields class/type/number/state) that the Protomaps basemap style cannot
+    // render. Detect it so we can apply a matching style instead.
+    function isNaturalEarthRoads(filename) {
+      return /usa-major-roads/i.test(filename);
+    }
+
+    // Build the MapLibre style for a given pmtiles file.
+    // - Protomaps basemaps -> official Protomaps style via basemaps.layers()
+    // - Natural Earth roads -> explicit line layers filtered on "class"
+    function buildStyle(filename) {
+      const url = `pmtiles://${window.location.origin}/pmtiles/${filename}`;
+
+      if (isNaturalEarthRoads(filename)) {
+        return {
+          version: 8,
+          // No glyphs/sprite needed: this style draws lines only (no text
+          // labels), so it renders fully offline with no font/sprite server.
+          sources: {
+            protomaps: {
+              type: 'vector',
+              url,
+              // Tiles only exist to zoom 10; allow MapLibre to overzoom past it.
+              maxzoom: 10,
+              attribution: '© <a href="https://www.naturalearthdata.com">Natural Earth</a>'
+            }
+          },
+          layers: [
+            { id: 'bg', type: 'background', paint: { 'background-color': '#f7f6f2' } },
+            {
+              id: 'roads-state', type: 'line', source: 'protomaps', 'source-layer': 'roads',
+              filter: ['==', ['get', 'class'], 'State'],
+              paint: {
+                'line-color': '#c9c9c9',
+                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.4, 10, 1.2]
+              }
+            },
+            {
+              id: 'roads-federal', type: 'line', source: 'protomaps', 'source-layer': 'roads',
+              filter: ['==', ['get', 'class'], 'Federal'],
+              paint: {
+                'line-color': '#e9a33a',
+                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.6, 10, 2.0]
+              }
+            },
+            {
+              id: 'roads-interstate', type: 'line', source: 'protomaps', 'source-layer': 'roads',
+              filter: ['==', ['get', 'class'], 'Interstate'],
+              paint: {
+                'line-color': '#d1495b',
+                'line-width': ['interpolate', ['linear'], ['zoom'], 4, 1.0, 10, 3.0]
+              }
+            }
+          ]
+        };
+      }
+
+      // Default: Protomaps basemap schema.
+      return {
+        version: 8,
+        glyphs: window.location.origin + '/basemaps-assets/fonts/{fontstack}/{range}.pbf',
+        sprite: window.location.origin + '/basemaps-assets/sprites/v4/light',
+        sources: {
+          protomaps: {
+            type: 'vector',
+            url,
+            attribution: '© <a href="https://openstreetmap.org">OpenStreetMap</a>'
+          }
+        },
+        layers: basemaps.layers("protomaps", basemaps.namedFlavor("light"), { lang: "en" })
+      };
+    }
+
+    async function init() {
+      const files = await getAvailableFiles();
+      const loading = document.getElementById('loading');
+
+      if (files.length === 0) {
+        loading.textContent = 'No PMTiles files found. Add .pmtiles files to /storage/maps/pmtiles/';
+        return;
+      }
+
+      // Populate dropdown
+      const select = document.getElementById('state-select');
+      files.forEach(filename => {
+        const opt = document.createElement('option');
+        opt.value = filename;
+        opt.textContent = displayName(filename);
+        select.appendChild(opt);
+      });
+
+      // Load first available file
+      const firstFile = files[0];
+      const firstKey = stateKey(firstFile);
+      const center = STATE_CENTERS[firstKey] || [-98.5, 39.8, 4];
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: buildStyle(firstFile),
+        center: [center[0], center[1]],
+        zoom: center[2]
+      });
+
+      map.addControl(new maplibregl.NavigationControl());
+
+      // GPS coordinate navigation
+      let gpsMarker = null;
+      const gpsError = document.getElementById('gps-error');
+
+      function goToCoords() {
+        const latStr = document.getElementById('gps-lat').value.trim();
+        const lonStr = document.getElementById('gps-lon').value.trim();
+        gpsError.style.display = 'none';
+
+        const lat = parseFloat(latStr);
+        const lon = parseFloat(lonStr);
+
+        if (isNaN(lat) || isNaN(lon)) {
+          gpsError.textContent = 'Enter valid numbers for lat/lon';
+          gpsError.style.display = 'block';
+          return;
+        }
+        if (lat < -90 || lat > 90) {
+          gpsError.textContent = 'Latitude must be between -90 and 90';
+          gpsError.style.display = 'block';
+          return;
+        }
+        if (lon < -180 || lon > 180) {
+          gpsError.textContent = 'Longitude must be between -180 and 180';
+          gpsError.style.display = 'block';
+          return;
+        }
+
+        if (gpsMarker) gpsMarker.remove();
+        gpsMarker = new maplibregl.Marker({ color: '#e74c3c' })
+          .setLngLat([lon, lat])
+          .addTo(map);
+
+        map.flyTo({ center: [lon, lat], zoom: 14 });
+      }
+
+      document.getElementById('gps-go').addEventListener('click', goToCoords);
+      document.querySelectorAll('#gps-lat, #gps-lon').forEach(input => {
+        input.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') goToCoords();
+        });
+      });
+
+      // --- Offline Address/Place Search ---
+      let searchMarker = null;
+      const searchInput = document.getElementById('search-input');
+      const searchBtn = document.getElementById('search-btn');
+      const searchResults = document.getElementById('search-results');
+      const searchHint = document.getElementById('search-hint');
+
+      function searchFeatures(query) {
+        if (!query || query.length < 2) {
+          searchResults.style.display = 'none';
+          return;
+        }
+
+        const lowerQuery = query.toLowerCase();
+        const zoom = map.getZoom();
+
+        // Update hint based on zoom level
+        if (zoom < 10) {
+          searchHint.textContent = 'Zoom in closer for street-level results. Currently showing cities/towns only.';
+        } else if (zoom < 13) {
+          searchHint.textContent = 'Zoom in more for individual addresses. Currently showing roads and places.';
+        } else {
+          searchHint.textContent = 'Searching loaded tiles for places, streets, and addresses.';
+        }
+
+        // Query all rendered features (what's currently visible on screen)
+        const features = map.queryRenderedFeatures();
+
+        // Deduplicate and filter by name match
+        const seen = new Set();
+        const matches = [];
+
+        for (const feature of features) {
+          // Look for name properties in the feature
+          const props = feature.properties || {};
+          const name = props.name || props['name:en'] || props['name_en'] || '';
+          if (!name) continue;
+
+          const lowerName = name.toLowerCase();
+          if (!lowerName.includes(lowerQuery)) continue;
+
+          // Create a dedup key from name + layer
+          const dedupKey = `${name}|${feature.layer.id}`;
+          if (seen.has(dedupKey)) continue;
+          seen.add(dedupKey);
+
+          // Get the center point of the feature for navigation
+          let center = null;
+          if (feature.geometry.type === 'Point') {
+            center = feature.geometry.coordinates;
+          } else if (feature.geometry.type === 'LineString') {
+            // Use midpoint of line
+            const coords = feature.geometry.coordinates;
+            const mid = Math.floor(coords.length / 2);
+            center = coords[mid];
+          } else if (feature.geometry.type === 'Polygon') {
+            // Use first coordinate of polygon as approximate center
+            const coords = feature.geometry.coordinates[0];
+            const mid = Math.floor(coords.length / 2);
+            center = coords[mid];
+          } else if (feature.geometry.type === 'MultiPolygon') {
+            const coords = feature.geometry.coordinates[0][0];
+            const mid = Math.floor(coords.length / 2);
+            center = coords[mid];
+          }
+
+          if (!center) continue;
+
+          // Determine feature type for display
+          const layerId = feature.layer.id || '';
+          let type = 'place';
+          if (layerId.includes('road') || layerId.includes('street') || layerId.includes('highway') || layerId.includes('path')) {
+            type = 'road';
+          } else if (layerId.includes('poi') || layerId.includes('point_of_interest')) {
+            type = 'POI';
+          } else if (layerId.includes('building') || layerId.includes('address')) {
+            type = 'address';
+          } else if (layerId.includes('water') || layerId.includes('lake') || layerId.includes('river')) {
+            type = 'water';
+          } else if (layerId.includes('park') || layerId.includes('landuse')) {
+            type = 'area';
+          }
+
+          matches.push({ name, type, center, layerId });
+
+          if (matches.length >= 20) break;
+        }
+
+        // Sort: exact start matches first, then contains
+        matches.sort((a, b) => {
+          const aStarts = a.name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+          const bStarts = b.name.toLowerCase().startsWith(lowerQuery) ? 0 : 1;
+          return aStarts - bStarts || a.name.localeCompare(b.name);
+        });
+
+        // Display results
+        searchResults.innerHTML = '';
+        searchResults.style.display = 'block';
+
+        if (matches.length === 0) {
+          searchResults.innerHTML = '<div class="no-results">No results found in loaded tiles. Try zooming in or panning to the area.</div>';
+          return;
+        }
+
+        matches.forEach(match => {
+          const div = document.createElement('div');
+          div.className = 'result-item';
+          div.innerHTML = `<span class="result-name">${escapeHtml(match.name)}</span><span class="result-type">${match.type}</span>`;
+          div.addEventListener('click', () => {
+            // Fly to the result
+            if (searchMarker) searchMarker.remove();
+            searchMarker = new maplibregl.Marker({ color: '#2ecc71' })
+              .setLngLat(match.center)
+              .setPopup(new maplibregl.Popup({ offset: 25 }).setText(match.name))
+              .addTo(map);
+            searchMarker.togglePopup();
+
+            map.flyTo({ center: match.center, zoom: Math.max(map.getZoom(), 15) });
+            searchResults.style.display = 'none';
+          });
+          searchResults.appendChild(div);
+        });
+      }
+
+      function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str;
+        return div.innerHTML;
+      }
+
+      // Search on button click
+      searchBtn.addEventListener('click', () => {
+        searchFeatures(searchInput.value.trim());
+      });
+
+      // Search on Enter key
+      searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          searchFeatures(searchInput.value.trim());
+        }
+      });
+
+      // Live search as you type (debounced)
+      let searchTimeout = null;
+      searchInput.addEventListener('input', () => {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+          searchFeatures(searchInput.value.trim());
+        }, 300);
+      });
+
+      // Close results when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!document.getElementById('search-control').contains(e.target)) {
+          searchResults.style.display = 'none';
+        }
+      });
+
+      // ================= Directions (GraphHopper) =================
+      // Photon-free: points come from lat,lon text, map clicks, or search.
+      let startPoint = null;   // [lon, lat]
+      let destPoint = null;
+      let startMarker = null;
+      let destMarker = null;
+      let pinMode = null;      // 'start' | 'dest' | null
+
+      const rStart = document.getElementById('route-start');
+      const rDest = document.getElementById('route-dest');
+      const rStartPin = document.getElementById('route-start-pin');
+      const rDestPin = document.getElementById('route-dest-pin');
+      const rGo = document.getElementById('route-go');
+      const rClear = document.getElementById('route-clear');
+      const rStatus = document.getElementById('route-status');
+      const rSummary = document.getElementById('route-summary');
+      const rDirections = document.getElementById('route-directions');
+
+      const setRStatus = (m) => { rStatus.textContent = m; };
+
+      function parseLatLon(text) {
+        const m = (text || '').trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+        if (!m) return null;
+        const lat = Number(m[1]), lon = Number(m[2]);
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+        return [lon, lat];
+      }
+
+      const fmtDist = (m) => {
+        const mi = m / 1609.344;
+        return mi < 0.2 ? `${Math.round(m * 3.28084)} ft` : `${mi.toFixed(mi < 10 ? 1 : 0)} mi`;
+      };
+      const fmtTime = (ms) => {
+        const mins = Math.round(ms / 60000);
+        if (mins < 60) return `${mins} min`;
+        return `${Math.floor(mins / 60)} hr ${mins % 60} min`;
+      };
+
+      function setRoutePoint(which, point) {
+        const color = which === 'start' ? '#2e7d32' : '#b42318';
+        const marker = new maplibregl.Marker({ color }).setLngLat(point).addTo(map);
+        if (which === 'start') {
+          if (startMarker) startMarker.remove();
+          startMarker = marker; startPoint = point;
+          rStart.value = `${point[1].toFixed(6)},${point[0].toFixed(6)}`;
+        } else {
+          if (destMarker) destMarker.remove();
+          destMarker = marker; destPoint = point;
+          rDest.value = `${point[1].toFixed(6)},${point[0].toFixed(6)}`;
+        }
+        pinMode = null;
+        rStartPin.classList.remove('active');
+        rDestPin.classList.remove('active');
+        map.getCanvas().style.cursor = '';
+      }
+
+      // Ensure the route source + line layer exist on the current style. Must be
+      // called after every setStyle() since sources/layers are replaced.
+      function ensureRouteLayer() {
+        if (!map.getSource('gh-route')) {
+          map.addSource('gh-route', {
+            type: 'geojson',
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } }
+          });
+        }
+        if (!map.getLayer('gh-route')) {
+          map.addLayer({
+            id: 'gh-route', type: 'line', source: 'gh-route',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
+            paint: { 'line-color': '#175cd3', 'line-width': 6, 'line-opacity': 0.85 }
+          });
+        }
+      }
+
+      function drawRoute(coords) {
+        ensureRouteLayer();
+        map.getSource('gh-route').setData({
+          type: 'Feature', properties: {},
+          geometry: { type: 'LineString', coordinates: coords }
+        });
+      }
+
+      rStartPin.addEventListener('click', () => {
+        pinMode = pinMode === 'start' ? null : 'start';
+        rStartPin.classList.toggle('active', pinMode === 'start');
+        rDestPin.classList.remove('active');
+        map.getCanvas().style.cursor = pinMode ? 'crosshair' : '';
+        setRStatus(pinMode ? 'Click the map to set the start point.' : 'Set a start and destination, then click Route.');
+      });
+      rDestPin.addEventListener('click', () => {
+        pinMode = pinMode === 'dest' ? null : 'dest';
+        rDestPin.classList.toggle('active', pinMode === 'dest');
+        rStartPin.classList.remove('active');
+        map.getCanvas().style.cursor = pinMode ? 'crosshair' : '';
+        setRStatus(pinMode ? 'Click the map to set the destination.' : 'Set a start and destination, then click Route.');
+      });
+
+      map.on('click', (e) => {
+        if (!pinMode) return;
+        setRoutePoint(pinMode, [e.lngLat.lng, e.lngLat.lat]);
+        setRStatus('Point set.');
+      });
+
+      async function calcRoute() {
+        if (!startPoint) { const p = parseLatLon(rStart.value); if (p) setRoutePoint('start', p); }
+        if (!destPoint) { const p = parseLatLon(rDest.value); if (p) setRoutePoint('dest', p); }
+        if (!startPoint || !destPoint) {
+          setRStatus('Enter both points as lat,lon or use the Map buttons to click them.');
+          return;
+        }
+        setRStatus('Calculating route locally…');
+        rSummary.textContent = '';
+        rDirections.innerHTML = '';
+
+        const qs = new URLSearchParams();
+        qs.append('point', `${startPoint[1]},${startPoint[0]}`);
+        qs.append('point', `${destPoint[1]},${destPoint[0]}`);
+        qs.set('profile', 'car');
+        qs.set('points_encoded', 'false');
+        qs.set('instructions', 'true');
+        qs.set('locale', 'en');
+
+        try {
+          const r = await fetch(`/api/route?${qs}`);
+          const data = await r.json();
+          if (!r.ok || data.message || !(data.paths && data.paths.length)) {
+            throw new Error(data.message || `GraphHopper HTTP ${r.status}`);
+          }
+          const path = data.paths[0];
+          drawRoute(path.points.coordinates);
+
+          const b = new maplibregl.LngLatBounds();
+          for (const c of path.points.coordinates) b.extend(c);
+          map.fitBounds(b, { padding: 60, maxZoom: 15 });
+
+          rSummary.textContent = `${fmtDist(path.distance)} • ${fmtTime(path.time)}`;
+          for (const ins of (path.instructions || [])) {
+            const li = document.createElement('li');
+            li.textContent = `${ins.text} — ${fmtDist(ins.distance)}`;
+            rDirections.appendChild(li);
+          }
+          setRStatus('Route calculated on this device.');
+        } catch (err) {
+          setRStatus(`Routing error: ${err.message}. Is the point inside the loaded OSM extract?`);
+        }
+      }
+
+      rGo.addEventListener('click', calcRoute);
+      rStart.addEventListener('keydown', (e) => { if (e.key === 'Enter') calcRoute(); });
+      rDest.addEventListener('keydown', (e) => { if (e.key === 'Enter') calcRoute(); });
+      rClear.addEventListener('click', () => {
+        startPoint = destPoint = null; pinMode = null;
+        if (startMarker) startMarker.remove();
+        if (destMarker) destMarker.remove();
+        startMarker = destMarker = null;
+        rStart.value = rDest.value = '';
+        rSummary.textContent = ''; rDirections.innerHTML = '';
+        rStartPin.classList.remove('active'); rDestPin.classList.remove('active');
+        map.getCanvas().style.cursor = '';
+        if (map.getSource('gh-route')) {
+          map.getSource('gh-route').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: [] } });
+        }
+        setRStatus('Set a start and destination, then click Route.');
+      });
+
+      // ================= Layer on/off toggle =================
+      // Categorize the current style's layers by id/source-layer, then toggle
+      // each group's visibility. Rebuilt whenever the style changes.
+      const layersHead = document.getElementById('layers-head');
+      const layersCaret = document.getElementById('layers-caret');
+      const layersBody = document.getElementById('layers-body');
+      const layersControl = document.getElementById('layers-control');
+
+      layersHead.addEventListener('click', () => {
+        layersControl.classList.toggle('open');
+        layersCaret.textContent = layersControl.classList.contains('open') ? '▾' : '▸';
+      });
+
+      function categorize(layer) {
+        // Never expose the routing overlay in the layer toggles.
+        if (layer.id === 'gh-route') return null;
+        const id = (layer.id || '').toLowerCase();
+        const sl = (layer['source-layer'] || '').toLowerCase();
+        const s = id + ' ' + sl;
+        if (layer.type === 'symbol' || /label|place|shield/.test(s)) return 'Labels';
+        if (/water|ocean|lake|river|waterway/.test(s)) return 'Water';
+        if (/road|street|highway|transit|rail|path|bridge|tunnel/.test(s)) return 'Roads';
+        if (/building/.test(s)) return 'Buildings';
+        if (/landuse|landcover|park|forest|wood|natural|earth|land/.test(s)) return 'Land';
+        if (/boundary|admin|border/.test(s)) return 'Boundaries';
+        if (/poi|point_of_interest/.test(s)) return 'Points of interest';
+        if (layer.type === 'background') return null; // keep background always on
+        return 'Other';
+      }
+
+      function buildLayerToggles() {
+        const style = map.getStyle();
+        if (!style || !style.layers) return;
+        const groups = {}; // category -> [layerId]
+        for (const layer of style.layers) {
+          const cat = categorize(layer);
+          if (!cat) continue;
+          (groups[cat] = groups[cat] || []).push(layer.id);
+        }
+        // Preserve a friendly order.
+        const order = ['Labels', 'Points of interest', 'Roads', 'Buildings', 'Water', 'Land', 'Boundaries', 'Other'];
+        const cats = Object.keys(groups).sort((a, b) => {
+          const ia = order.indexOf(a), ib = order.indexOf(b);
+          return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        });
+
+        layersBody.innerHTML = '';
+        for (const cat of cats) {
+          const ids = groups[cat];
+          const label = document.createElement('label');
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          // Reflect current visibility (visible unless explicitly 'none').
+          const anyVisible = ids.some(id => (map.getLayoutProperty(id, 'visibility') || 'visible') !== 'none');
+          cb.checked = anyVisible;
+          cb.addEventListener('change', () => {
+            const vis = cb.checked ? 'visible' : 'none';
+            for (const id of ids) {
+              if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+            }
+          });
+          const span = document.createElement('span');
+          span.textContent = `${cat} (${ids.length})`;
+          label.appendChild(cb);
+          label.appendChild(span);
+          layersBody.appendChild(label);
+        }
+      }
+
+      // (Re)initialize route layer + layer toggles on every style load, so
+      // switching maps via the dropdown does not lose the route overlay or the
+      // toggle list.
+      map.on('styledata', () => {
+        ensureRouteLayer();
+        buildLayerToggles();
+      });
+
+      map.on('load', () => {
+        loading.style.display = 'none';
+      });
+
+      // Switch maps
+      select.value = firstFile;
+      select.addEventListener('change', () => {
+        const filename = select.value;
+        const key = stateKey(filename);
+        const c = STATE_CENTERS[key] || [-98.5, 39.8, 4];
+
+        // Rebuild the whole style: the Natural Earth roads file and the
+        // Protomaps basemaps use different layer definitions, so swapping only
+        // the source URL would leave incompatible layers behind.
+        map.setStyle(buildStyle(filename));
+        map.flyTo({ center: [c[0], c[1]], zoom: c[2] });
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>

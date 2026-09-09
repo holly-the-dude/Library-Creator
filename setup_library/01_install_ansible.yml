@@ -1,0 +1,275 @@
+---
+- name: install main
+  hosts: localhost
+  gather_facts: no
+
+  vars:
+    target_ip: library
+    podman_images:
+      - hotspot.tar
+      - webserver.tar
+      - wiki.tar
+      - music.tar
+      - calibre-web.tar
+      - library_maps.tar
+      # - rasbase.tar
+      # - update_display.tar
+
+  tasks:
+    - name: test connect
+      raw: |
+        whoami
+        hostname
+      register: whowhatwhere
+      tags: runthis
+
+    - name: show results
+      debug:
+        msg:
+          - "{{ whowhatwhere }}"
+      tags: runthis
+#################################
+#
+#################################
+    - name: setup ssh keys
+      copy:
+        src: files/dotssh.tar
+        dest: /tmp/dotssh.tar
+
+    - name: dotssh
+      shell: |
+        cd /root/.ssh
+        /usr/bin/tar xvf /tmp/dotssh.tar
+        pwd
+        hostname
+        rm -f /tmp/dotssh.tar
+        ssh-keyscan localhost >> ~/.ssh/known_hosts
+      register: dotssh
+      ignore_errors: true
+      become: true
+
+    - debug: var=dotssh.stdout_lines
+
+    ################################
+    # Setup display
+    ################################
+    - name: copy tft.tar file over
+      copy:
+        src: files/tft.tar
+        dest: /tmp/tft.tar
+
+    - name: me stencile
+      copy:
+        src: files/display/file_me_invert.jpg
+        dest: /root/file_me_invert.jpg
+      become: true
+
+
+####################################
+    - name: copy podman network files
+      copy:
+        src: files/87-podman-bridge.conflist
+        dest: /etc/cni/net.d/87-podman-bridge.conflist
+      become: true
+
+    - name: restart podman
+      shell: |
+        systemctl restart podman
+      register: restartpodman
+      become: true
+
+    - debug: var=restartpodman.stdout_lines
+
+    - name: Setup Base /Library folder
+      shell: |
+        mkdir /Library
+        chmod 777 /Library
+      register: library_folder
+      become: true
+
+    - name: display files over
+      copy:
+        src: files/display/
+        dest: /root/display/
+      become: true
+
+    - name: copy fbi.service for display over
+      copy:
+        src: files/fbi.service
+        dest: /etc/systemd/system/fbi.service
+        mode: '0755'
+      become: true
+
+    - name: create halt.target.wants directory
+      file:
+        path: /etc/systemd/system/halt.target.wants
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: create poweroff.target.wants directory
+      file:
+        path: /etc/systemd/system/poweroff.target.wants
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: copy halt.target.wants shutdownsplash.service
+      copy:
+        src: files/halt.target.wants/shutdownsplash.service
+        dest: /etc/systemd/system/halt.target.wants/shutdownsplash.service
+        mode: '0755'
+      become: true
+
+    - name: copy poweroff.target.wants shutdownsplash.service
+      copy:
+        src: files/poweroff.target.wants/shutdownsplash.service
+        dest: /etc/systemd/system/poweroff.target.wants/shutdownsplash.service
+        mode: '0755'
+      become: true
+
+    - name: enable service
+      shell: |
+        systemctl daemon-reload
+        systemctl enable fbi.service
+        systemctl start fbi.service
+      register: enablefbi
+      become: true
+
+    - name: copy start_library.service to pi
+      copy:
+        src: files/start_library.service
+        dest: /etc/systemd/system/start_library.service
+        mode: '0755'
+      become: true
+
+    - name: copy start_library.yml
+      copy:
+        src: files/start_library.yml
+        dest: /root/start_library.yml
+        mode: '0755'
+      become: true
+
+
+    - name: enable service
+      shell: |
+        systemctl daemon-reload
+        systemctl enable start_library.service
+      register: enablestartlibraryservice
+      become: true
+
+
+    - name: change boot cmdline.txt
+      shell: |
+        sed -i 's/console=serial0,115200 console=tty1//g' /boot/cmdline.txt
+      become: true
+
+    - name: disable autologin
+      shell: |
+        rm -fv /etc/systemd/system/getty@tty1.service.d/autologin.conf
+      become: true
+
+    - name: create custom shutdown
+      copy:
+        content: |
+          #!/bin/bash
+          source /root/.profile
+          /usr/local/bin/displayit library_shutting_down.jpg
+          sleep 2
+          /usr/bin/podman ps |grep -v CONTAINER|awk '{print "podman stop "$1}'|sh
+          /usr/local/bin/displayit library_ok_to_poweroff.jpg
+          sleep 2
+          /usr/sbin/shutdown -P now
+
+        dest: /usr/local/bin/library_shutdown
+        mode: '0755'
+      become: true
+
+
+    - name: copy start_library.service to pi
+      copy:
+        src: files/start_library.service
+        dest: /etc/systemd/system/start_library.service
+        mode: '0755'
+      become: true
+
+    - name: copy shutdown flask py file over
+      copy:
+        src: files/library_shutdown.py
+        dest: /usr/local/bin/library_shutdown.py
+        mode: '0755'
+      become: true
+
+    - name: copy shutdown_library service over
+      copy:
+        src: files/shutdown_library.service
+        dest: /etc/systemd/system/shutdown_library.service
+        mode: '0755'
+      become: true
+
+
+    - name: enable service
+      shell: |
+        systemctl daemon-reload
+        systemctl enable start_library.service
+        systemctl enable shutdown_library.service
+      register: enablestartlibraryservice
+      become: true
+
+
+#################################
+# configure library wireless enablement
+    - name: run setwifi
+      shell: |
+        files/setwifi.sh
+      register: setwifi
+      become: true
+#################################
+#################################
+# Install touch run
+#################################
+    - name: setup touch run service
+      shell: |
+        cd /
+        tar xvf /root/install/setup_library/files/touch_run.tar
+        apt-get install -y python3-evdev
+        systemctl daemon-reload
+        systemctl enable touch_run
+        systemctl start touch_run
+        #Fix touch for pi 5 because of button for power
+        PI5=`raspinfo 2>/dev/null|grep Model|grep Machine|grep 'Pi 5' -c`
+        echo "$PI5 hardware Dude"
+        if [ "$PI5" == "1" ]; then
+          echo We are on a Pi 5
+          DR=`cat /proc/bus/input/devices |grep -E 'N:|H:'|grep -A1 Touch|grep Handler|awk '{print $3}'`
+          echo $DR
+          sed -i "s/event0/$DR/g" /usr/local/bin/touch_monitor.py
+          systemctl restart touch_run
+        fi
+      register: touchrun
+      args:
+        executable: /bin/bash
+      become: true
+
+    - debug: var=touchrun.stdout_lines
+
+#################################
+# load podman images
+#################################
+    - name: stop pods are created not loaded 
+      meta: end_play
+  
+    - name: "podman load images"
+      shell: |
+        /usr/local/bin/displayit loading_{{ ansible_loop.index0 }}.jpg
+        podman images | grep {{ (item.split('.')).0 }} >/dev/null || podman load -i /root/install/setup_library/files/containers/{{ item }} && echo '{{ item }} already installed'
+      register: podman_load
+      become: true
+      loop: "{{ podman_images }}"
+      loop_control:
+        extended: true
+
+    - debug:
+        msg:
+          - "{{ (podman_load | json_query('results[*].stdout_lines[0]')) }}"
+
