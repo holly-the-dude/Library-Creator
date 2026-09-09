@@ -19,14 +19,14 @@ Keep it to yourself or share it with anyone in range. Connect to the WiFi networ
 
 ## Perfect for
 
-- 🏕️ **Camping trips** — entertainment and information in the great outdoors.
-- 🚗 **Road trips** — plug it into the car's power outlet and keep everyone occupied.
-- 🎓 **Presentations & classes** — hand out files and resources to a whole room, no network needed.
-- 🌾 **Rural or remote areas** — get to information where there simply is no internet.
-- 🧟 **Emergencies** — stay informed when the internet is down, whether it's a storm, a
+- <img src="docs/icons/png/camping.png" alt="" height="20" align="absmiddle"> **Camping trips** — entertainment and information in the great outdoors.
+- <img src="docs/icons/png/roadtrip.png" alt="" height="20" align="absmiddle"> **Road trips** — plug it into the car's power outlet and keep everyone occupied.
+- <img src="docs/icons/png/class.png" alt="" height="20" align="absmiddle"> **Presentations & classes** — hand out files and resources to a whole room, no network needed.
+- <img src="docs/icons/png/rural.png" alt="" height="20" align="absmiddle"> **Rural or remote areas** — get to information where there simply is no internet.
+- <img src="docs/icons/png/emergency.png" alt="" height="20" align="absmiddle"> **Emergencies** — stay informed when the internet is down, whether it's a storm, a
   supply-chain hiccup, or the zombie/asteroid/whatever apocalypse of your choosing.
-- 🔒 **Private storage** — keep personal files on a device that never phones home.
-- 🤖 **Tech enthusiasts** — because building your own library server is genuinely fun.
+- <img src="docs/icons/png/private.png" alt="" height="20" align="absmiddle"> **Private storage** — keep personal files on a device that never phones home.
+- <img src="docs/icons/png/tech.png" alt="" height="20" align="absmiddle"> **Tech enthusiasts** — because building your own library server is genuinely fun.
 
 ---
 
@@ -36,9 +36,9 @@ Pick the guide that matches what you're doing:
 
 | Guide | For you if you want to… |
 |-------|--------------------------|
-| 📖 **[Usage Guide](docs/USAGE.md)** | **Use** a Library device that's already running — connect, browse Wikipedia, play music, read books, view maps. No technical knowledge needed. |
-| 🔧 **[Installation Guide](docs/INSTALL.md)** | **Build/set up** a device: flash the Pi, run the installer, and get a working Library. |
-| 🛠️ **[Developer Guide](docs/DEVELOPERS.md)** | **Understand or modify** how it works — architecture, container build pipeline, and adding new services. |
+| <img src="docs/icons/png/usage.png" alt="" height="18" align="absmiddle"> **[Usage Guide](docs/USAGE.md)** | **Use** a Library device that's already running — connect, browse Wikipedia, play music, read books, view maps. No technical knowledge needed. |
+| <img src="docs/icons/png/install.png" alt="" height="18" align="absmiddle"> **[Installation Guide](docs/INSTALL.md)** | **Build/set up** a device: flash the Pi, run the installer, and get a working Library. |
+| <img src="docs/icons/png/developer.png" alt="" height="18" align="absmiddle"> **[Developer Guide](docs/DEVELOPERS.md)** | **Understand or modify** how it works — architecture, container build pipeline, and adding new services. |
 
 Additional reference:
 
@@ -57,12 +57,12 @@ Additional reference:
 
 | Service | Powered by | Client URL |
 |---------|-----------|------------|
-| 🌐 Web hub | nginx | `http://library` / `http://10.1.1.1` |
-| 📚 Wikipedia | [Kiwix](https://kiwix.org/) | `http://10.1.1.1:6902` |
-| 🎵 Music | [LMS](https://github.com/epoupon/lms) | `http://10.1.1.1:9099` |
-| 📖 E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
-| 🗺️ Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
-| 📶 WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
+| <img src="docs/icons/png/web.png" alt="" height="20" align="absmiddle"> Web hub | nginx | `http://library` / `http://10.1.1.1` |
+| <img src="docs/icons/png/wiki.png" alt="" height="20" align="absmiddle"> Wikipedia | [Kiwix](https://kiwix.org/) | `http://10.1.1.1:6902` |
+| <img src="docs/icons/png/music.png" alt="" height="20" align="absmiddle"> Music | [LMS](https://github.com/epoupon/lms) | `http://10.1.1.1:9099` |
+| <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
+| <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
+| <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
 
 ---
 

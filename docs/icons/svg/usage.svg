@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Usage guide">
+  <!-- Original: single closed manual with a bookmark and an eye motif. -->
+  <rect x="14" y="10" width="36" height="44" rx="4" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <path d="M14 10 H22 V28 L18 24 L14 28 Z" fill="#2e9e5b" stroke="#14432a" stroke-width="2"/>
+  <path d="M24 40 Q32 32 40 40 Q32 48 24 40 Z" fill="#e6f5ea" stroke="#14432a" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="32" cy="40" r="3.5" fill="#14432a"/>
+</svg>

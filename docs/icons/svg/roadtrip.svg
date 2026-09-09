@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Road trips">
+  <!-- Original: chunky hatchback profile, two windows, round wheels. -->
+  <path d="M8 40 L12 40 L18 26 C19 24 21 22 24 22 H44 C47 22 49 24 51 27 L55 34 H58 C59 34 60 35 60 37 V42 C60 43 59 44 58 44 H8 C7 44 6 43 6 41 V42 C6 41 7 40 8 40 Z"
+        fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M24 26 H33 V34 H19 Z" fill="#e6f5ea"/>
+  <path d="M36 26 H43 C45 26 46 27 47 29 L49 34 H36 Z" fill="#e6f5ea"/>
+  <circle cx="20" cy="45" r="7" fill="#1c5e3a" stroke="#14432a" stroke-width="2.5"/>
+  <circle cx="46" cy="45" r="7" fill="#1c5e3a" stroke="#14432a" stroke-width="2.5"/>
+  <circle cx="20" cy="45" r="2.5" fill="#e6f5ea"/>
+  <circle cx="46" cy="45" r="2.5" fill="#e6f5ea"/>
+</svg>

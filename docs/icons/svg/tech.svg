@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Tech enthusiasts">
+  <!-- Original: microchip with pins on all sides + inner die. -->
+  <g stroke="#14432a" stroke-width="3" stroke-linecap="round">
+    <path d="M22 12 V4 M32 12 V4 M42 12 V4"/>
+    <path d="M22 60 V52 M32 60 V52 M42 60 V52"/>
+    <path d="M12 22 H4 M12 32 H4 M12 42 H4"/>
+    <path d="M60 22 H52 M60 32 H52 M60 42 H52"/>
+  </g>
+  <rect x="12" y="12" width="40" height="40" rx="6" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <rect x="24" y="24" width="16" height="16" rx="3" fill="#57c07f" stroke="#14432a" stroke-width="2.5"/>
+</svg>

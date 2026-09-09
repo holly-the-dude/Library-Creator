@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Emergencies">
+  <!-- Original: rounded triangle warning with off-center bang. -->
+  <path d="M32 8 L60 54 C61 56 60 58 57 58 H7 C4 58 3 56 4 54 Z"
+        fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <rect x="28.5" y="22" width="7" height="20" rx="3.5" fill="#e6f5ea"/>
+  <circle cx="32" cy="49" r="4" fill="#e6f5ea"/>
+</svg>

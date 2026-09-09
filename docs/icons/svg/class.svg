@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Presentations and classes">
+  <!-- Original: presentation board on tripod legs with a bar chart. -->
+  <rect x="10" y="10" width="44" height="30" rx="3" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <g fill="#e6f5ea">
+    <rect x="18" y="26" width="6" height="8"/>
+    <rect x="29" y="21" width="6" height="13"/>
+    <rect x="40" y="17" width="6" height="17"/>
+  </g>
+  <path d="M32 40 V48" stroke="#14432a" stroke-width="3"/>
+  <path d="M32 48 L20 58 M32 48 L44 58" stroke="#14432a" stroke-width="3" stroke-linecap="round"/>
+</svg>

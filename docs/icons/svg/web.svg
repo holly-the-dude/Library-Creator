@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Web hub">
+  <!-- Original artwork (hand-authored). Flat two-tone geometric style. -->
+  <circle cx="32" cy="32" r="24" fill="#2e9e5b"/>
+  <!-- offset inner meridians, asymmetric to avoid symbol-like symmetry -->
+  <g fill="none" stroke="#e6f5ea" stroke-width="3" stroke-linecap="round">
+    <ellipse cx="32" cy="32" rx="11" ry="24"/>
+    <path d="M9 25 H55"/>
+    <path d="M11 40 H53"/>
+    <path d="M32 8 V56"/>
+  </g>
+  <circle cx="32" cy="32" r="24" fill="none" stroke="#1c5e3a" stroke-width="3"/>
+</svg>

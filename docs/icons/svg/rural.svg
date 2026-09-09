@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Rural or remote">
+  <!-- Original: rolling hills + sun, no path signal — a landscape scene. -->
+  <circle cx="46" cy="20" r="8" fill="#57c07f" stroke="#14432a" stroke-width="2.5"/>
+  <path d="M6 50 Q20 30 32 44 Q42 54 58 34 V54 H6 Z" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M6 54 H58" stroke="#14432a" stroke-width="2.5"/>
+  <path d="M14 47 Q22 39 30 47" fill="none" stroke="#e6f5ea" stroke-width="2"/>
+</svg>

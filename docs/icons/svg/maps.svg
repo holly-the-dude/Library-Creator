@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Maps">
+  <!-- Original: folded map sheet with route + a separate pin. -->
+  <path d="M6 18 L24 12 L42 18 L58 12 V46 L42 52 L24 46 L6 52 Z"
+        fill="#e6f5ea" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M24 12 V46 M42 18 V52" stroke="#14432a" stroke-width="2"/>
+  <path d="M12 40 C20 30 22 40 30 30" fill="none" stroke="#2e9e5b" stroke-width="3" stroke-linecap="round"/>
+  <path d="M46 22 C52 22 55 26 55 31 C55 37 46 44 46 44 C46 44 37 37 37 31 C37 26 40 22 46 22 Z"
+        fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <circle cx="46" cy="31" r="3.5" fill="#e6f5ea"/>
+</svg>

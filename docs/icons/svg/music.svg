@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Music">
+  <!-- Original: single beamed note with two round heads, thick beam. -->
+  <circle cx="20" cy="46" r="9" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <circle cx="44" cy="40" r="9" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <path d="M27 46 V18 L53 12 V40" fill="none" stroke="#14432a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M27 22 L53 16" fill="none" stroke="#2e9e5b" stroke-width="4" stroke-linecap="round"/>
+</svg>

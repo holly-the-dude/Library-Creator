@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Installation guide">
+  <!-- Original: single open-end wrench on a diagonal, bold shaft. -->
+  <g transform="rotate(-40 32 32)">
+    <path d="M32 12 A11 11 0 1 0 43 25 L43 20 L38 20 L38 25 L33 25 L33 20 L32 20 Z"
+          fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+    <rect x="27" y="30" width="10" height="24" rx="4" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  </g>
+  <circle cx="24" cy="24" r="4" fill="#e6f5ea"/>
+</svg>

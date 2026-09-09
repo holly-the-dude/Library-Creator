@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="E-books">
+  <!-- Original: open book, splayed pages, center spine, page lines. -->
+  <path d="M32 16 C24 11 15 11 8 14 V50 C15 47 24 47 32 52 C40 47 49 47 56 50 V14 C49 11 40 11 32 16 Z"
+        fill="#e6f5ea" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M32 16 V52" stroke="#14432a" stroke-width="2.5"/>
+  <g stroke="#2e9e5b" stroke-width="2" stroke-linecap="round">
+    <path d="M13 22 H27"/><path d="M13 30 H27"/><path d="M13 38 H25"/>
+    <path d="M37 22 H51"/><path d="M37 30 H51"/><path d="M39 38 H51"/>
+  </g>
+</svg>

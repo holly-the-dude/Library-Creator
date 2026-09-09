@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Developer guide">
+  <!-- Original: crossed screwdriver + wrench forming an X. -->
+  <g transform="rotate(45 32 32)">
+    <rect x="28" y="8" width="8" height="30" rx="2" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+    <path d="M28 38 H36 L32 56 Z" fill="#57c07f" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+  <g transform="rotate(-45 32 32)">
+    <path d="M32 8 A10 10 0 1 0 42 20 L38 20 L38 16 L34 16 L34 20 L32 20 Z"
+          fill="#2e9e5b" stroke="#14432a" stroke-width="2.5" stroke-linejoin="round"/>
+    <rect x="27" y="26" width="10" height="30" rx="4" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  </g>
+</svg>

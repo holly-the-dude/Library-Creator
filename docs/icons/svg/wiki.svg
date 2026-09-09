@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Wikipedia">
+  <!-- Original artwork: three leaning books of unequal height/width. -->
+  <g stroke="#14432a" stroke-width="2.5" stroke-linejoin="round">
+    <rect x="10" y="20" width="12" height="34" rx="2.5" fill="#2e9e5b"/>
+    <rect x="24" y="14" width="12" height="40" rx="2.5" fill="#2e9e5b"/>
+    <g transform="rotate(12 46 34)">
+      <rect x="40" y="18" width="12" height="36" rx="2.5" fill="#57c07f"/>
+    </g>
+  </g>
+  <g stroke="#14432a" stroke-width="2" stroke-linecap="round">
+    <path d="M13 27 H19"/>
+    <path d="M27 21 H33"/>
+  </g>
+</svg>
