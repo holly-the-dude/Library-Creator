@@ -4,6 +4,9 @@
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue?logo=paypal)](https://www.paypal.com/ncp/payment/T8MGW39TXCR4J)
 
+> **Don't want to build it yourself?** Get a ready-to-use, pre-configured kit at
+> **[librarydepository.com](https://librarydepository.com)** — it arrives ready to go, no assembly required.
+
 Library-Creator turns a Raspberry Pi into a self-contained knowledge station: your own
 little library that fits in the palm of your hand (it doesn't *run* from your hand — that
 would just be dumb). It hosts its own WiFi network and serves Wikipedia, a music and
@@ -123,3 +126,5 @@ be. Your library is *yours*.
 ## Support
 
 If Library-Creator is useful to you, consider [supporting development via PayPal](https://www.paypal.com/ncp/payment/T8MGW39TXCR4J). Thank you!
+
+Prefer a ready-made device? Pre-configured kits are available at [librarydepository.com](https://librarydepository.com).
