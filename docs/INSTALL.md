@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide is for people who want to build a **Library** device — a self-contained,
+This guide is for people who want to build a **Library** device - a self-contained,
 offline "library in a box" that runs on a Raspberry Pi and serves Wikipedia, music,
 e-books, and offline maps over its own WiFi hotspot. No internet connection is needed
 by the people who use it.
@@ -18,7 +18,7 @@ When installation finishes, the Raspberry Pi will:
 - Broadcast an **open WiFi network named `library`**.
 - Serve a web home page at **`http://library`** (or `http://10.1.1.1`) to anyone who connects.
 - Offer Wikipedia, a music player, an e-book reader, and offline maps with turn-by-turn
-  driving directions — all offline.
+  driving directions - all offline.
 - Show status messages on an attached TFT screen (or HDMI monitor) while it boots.
 
 ---
@@ -29,27 +29,32 @@ When installation finishes, the Raspberry Pi will:
 
 | Item | Notes |
 |------|-------|
-| Raspberry Pi | Pi 3, Pi 4, or Pi 5 |
-| microSD card | 16 GB or larger, for Raspberry Pi OS |
-| USB drive | Holds the library content (Wikipedia, music, books, maps). Larger is better — content can be tens of GB |
+| Raspberry Pi | Pi 3 (dont expect speed), Pi 4, or Pi 5 (2gb works) |
+| microSD card | 16 GB or larger, for Raspberry Pi OS and install files|
+| USB drive | Holds the library content (Wikipedia, music, books, maps). Larger is better - content can ginormous |
 | Display | A 3.5" TFT, 2.4" TFT, or an HDMI monitor. The display is optional but recommended for seeing boot status |
 | Power supply | The official supply for your Pi model |
 
 ### Software
 
-- **Raspberry Pi OS** (64-bit, Debian-based). Bullseye, Bookworm, and Trixie are all supported — the installer detects Trixie and applies compatibility fixes automatically.
+- **Raspberry Pi OS** (64-bit, Debian-based). Bullseye, Bookworm, and Trixie are all supported - the installer detects Trixie and applies compatibility fixes automatically.
+- Dont skimp select the "Raspberry Pi Desktop, cause you can hook up a monitor mouse,keyboard an still use this thing
 - Network access **during installation only** (WiFi or Ethernet) so the Pi can download packages and container base images. The finished device does not need internet.
 - Root access on the Pi.
 
 ---
 
-## Step 1 — Flash Raspberry Pi OS
+## Step 1 - Flash Raspberry Pi OS
 
 1. Use [Raspberry Pi Imager](https://www.raspberrypi.com/software/) to flash Raspberry Pi OS (64-bit) to your microSD card.
-2. In the Imager settings, enable SSH and configure WiFi/Ethernet so you can reach the Pi during setup.
-3. Boot the Pi and log in as `root` (or use `sudo -i` to become root).
+2. In the Imager settings, enable SSH and DO NOT configure wifi.
+1. insert the microsd card
+2. plug in your usb drive
+3. install the tft display or hdmi video
+4. connect the pi's ethernet port to an active port on your router
+3. Boot the Pi and log in as `root` (or use `sudo bash` to become root).
 
-## Step 2 — Get the installer onto the Pi
+## Step 2 - Get the installer onto the Pi
 
 Clone this repository into root's home directory:
 
@@ -59,11 +64,11 @@ git clone https://github.com/holly-the-dude/Library-Creator.git
 ```
 
 That's all you need to do. You'll run the installer directly from the cloned repository in
-Step 4 — during First Boot it copies itself to `/root/bootstrap` automatically so the
-auto-resume cron job (`/root/bootstrap --auto`) can pick it up after each reboot. You do
+Step 4 - during First Boot it copies itself to `/root/bootstrap` automatically so the
+auto-resume cron job (`/root/bootstrap`) can pick it up after each reboot. You do
 not need to copy or `chmod` anything by hand.
 
-## Step 3 — Attach the USB drive
+## Step 3 - Attach the USB drive
 
 Plug in the USB drive that will hold your library content.
 
@@ -75,7 +80,7 @@ Plug in the USB drive that will hold your library content.
 If your drive is already set up as `Library_USB` from a previous install, it will be left
 alone.
 
-## Step 4 — Run the installer
+## Step 4 - Run the installer
 
 Run it straight from the cloned repository:
 
@@ -105,19 +110,21 @@ You will see the main menu:
 
 Choose **`1) Fresh Install`**. You will be asked:
 
-1. **Display type** — pick what is attached:
+1. **Display type** - pick what is attached:
    - `1)` TFT 3.5" (480×320)
    - `2)` TFT 2.4" (320×240)
    - `3)` HDMI, auto-scaled status messages
    - `4)` HDMI desktop (Pi desktop + kiosk browser)
-2. **HDMI resolution** (HDMI modes only) — `Auto-scale` is recommended; the Pi reads the monitor's native resolution automatically.
-3. **Confirmation** — review the summary and confirm to begin.
+2. **HDMI resolution** (HDMI modes only) - `Auto-scale` is recommended; the Pi reads the monitor's native resolution automatically.
+3. **Confirmation** - review the summary and confirm to begin.
 
-## Step 5 — Let it run (three boot stages)
+## Step 5 - Let it run (three boot stages)
 
 Installation runs in **three stages, each separated by an automatic reboot**. The
 installer sets up a cron job that resumes the next stage automatically after each reboot,
 so you can leave it alone.
+Once it starts running its borring lots of updates and installs, and time. If you have chosen a fast microsd card then it will be faster.
+you can always get a cup of coffee!
 
 | Stage | What happens |
 |-------|--------------|
@@ -126,10 +133,10 @@ so you can leave it alone.
 | **Third Boot** | Removes the resume cron job, shows the "ready" splash, cleans up temporary network config, and reboots into production mode |
 
 The TFT/HDMI display shows progress messages throughout. Total time depends on your Pi,
-network speed, and how much content is downloaded — expect anywhere from 30 minutes to a
+network speed, and how much content is downloaded - expect anywhere from 30 minutes to a
 couple of hours.
 
-## Step 6 — Verify it worked
+## Step 6 - Verify it worked
 
 When the final boot finishes:
 
@@ -186,7 +193,7 @@ podman restart graphhopper
 ```
 
 > ⚠️ **Raspberry Pi memory limit.** Building the routing graph is memory-intensive. On a
-> **2 GB Pi, use single-state extracts only** — a multi-state or regional `.pbf` (over
+> **2 GB Pi, use single-state extracts only** - a multi-state or regional `.pbf` (over
 > ~1.5 GB) will run out of memory while importing and routing will never come up. Map
 > **viewing** (PMTiles) is unaffected and works at any size. `get-state.sh` warns you if
 > an extract looks too large.
@@ -231,7 +238,7 @@ cat /var/spool/cron/crontabs/root
 ```
 
 It should contain a line calling `/root/bootstrap --auto`. If the system has been up
-longer than 5 minutes, auto-resume won't fire — just run `./bootstrap` and pick
+longer than 5 minutes, auto-resume won't fire - just run `./bootstrap` and pick
 `3) Resume Install`.
 
 **The Ansible stage failed.**
@@ -246,7 +253,7 @@ this for you; if you're mounting an existing drive, confirm the label with
 **The display shows nothing / wrong colors.**
 Confirm you picked the correct display type during install. For TFT issues, re-run the
 relevant boot stage from `5) Advanced Options`. Serial consoles may not render the
-color status messages properly — use SSH or a real terminal.
+color status messages properly - use SSH or a real terminal.
 
 **I can't see the `library` WiFi network.**
 The hotspot needs full control of `wlan0`. If something else (like NetworkManager)

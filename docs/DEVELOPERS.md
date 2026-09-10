@@ -10,7 +10,7 @@ running device, read [USAGE.md](USAGE.md).
 
 ## What the project is
 
-Library-Creator turns a Raspberry Pi into an **offline "library in a box."** It:
+Library-Creator turns a Raspberry Pi into an **offline "library in a box."** or in the parlance of our times **A Personal Cloud Device** It:
 
 - Runs a self-hosted WiFi **hotspot** (open SSID `library`) so clients need no existing network.
 - Serves a **web hub** plus a set of content services, each in its own Podman container.
@@ -21,31 +21,36 @@ Everything is orchestrated from a single interactive installer script, `bootstra
 by Ansible playbooks and a set of Podman container definitions.
 
 ---
+## Future work
+- Add GPS usb
+- LoRa Text messaging with other Libraries or Meshtastic or both
+---
 
 ## Architecture overview
 
 ```
-                        ┌─────────────────────────────────────────────┐
-                        │              Raspberry Pi (host)             │
-   client device        │                                             │
-   ┌──────────┐  WiFi   │  ┌────────────┐   podman net (10.88.0.0/24) │
-   │ phone /   │────────┼─▶│  hotspot    │                             │
-   │ laptop    │  SSID   │  │ 10.1.1.1    │   ┌──────────────────────┐ │
-   └──────────┘ "library"│ │ hostapd +   │   │ webserver 10.88.0.201 │ │
-                        │  │ dnsmasq     │──▶│ nginx :80 (the hub)   │ │
-                        │  └────────────┘   └──────────┬───────────┘ │
-                        │                              │ monitors     │
-                        │   ┌───────────┐  ┌───────────┴──┐  ┌───────┐│
-                        │   │ wiki       │  │ music         │  │ maps  ││
-                        │   │ 10.88.0.200│  │ 10.88.0.210   │  │ :8080 ││
-                        │   │ Kiwix :6902│  │ LMS :5082/9099│  └───┬───┘│
-                        │   └───────────┘  └──────────────┘      │/api/route
-                        │   ┌────────────────────────────┐   ┌───┴──────────┐
-                        │   │ calibre-web 10.88.0.211 :8083│  │ graphhopper   │
-                        │   └────────────────────────────┘  │ 10.88.0.213    │
-                        │                                    │ :8989 (routing)│
-                        │        content ⇦ /Library (USB, exFAT)  └──────────┘│
-                        └─────────────────────────────────────────────┘
+                        ┌─────────────────────────────────────────────
+                        │             Raspberry Pi (host)
+   client device        │
+   ┌──────────┐  WiFi   │  ┌────────────┐   podman net (10.88.0.0/24)
+   │ phone /  │─────────┼─▶│  hotspot   │
+   │ laptop   │  SSID   │  │ 10.1.1.1   │   ┌───────────────────────┐
+   └──────────┘"library"│  │ hostapd +  │   │ webserver 10.88.0.201 │
+                        │  │ dnsmasq    │──▶│ nginx :80 (the hub)  │
+                        │  └────────────┘   └──────────┬────────────┘
+                        │                              │ monitors
+                        │   ┌───────────┐  ┌───────────┴───┐ ┌───────┐
+                        │   │wiki       │  │ music         │ │ maps  │
+                        │   │10.88.0.200│  │ 10.88.0.210   │ │ :8080 │
+                        │   │Kiwix :6902│  │ LMS :5082/9099│ └───┬───┘
+                        │   └───────────┘  └───────────────┘     │/api/route
+                        │ ┌─────────────────────────────┐   ┌────┴───────────┐
+                        │ │calibre-web 10.88.0.211 :8083│   │ graphhopper    │
+                        │ └─────────────────────────────┘   │ 10.88.0.213    │
+                        │                                   │ :8989 (routing)│
+                        │                                   └────────────────┘
+                        │        content ⇦ /Library (USB, exFAT)
+                        └─────────────────────────────────────────────
 ```
 
 - The **hotspot** container owns `wlan0`, assigns itself `10.1.1.1/24`, and runs `hostapd`
