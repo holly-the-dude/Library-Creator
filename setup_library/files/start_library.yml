@@ -93,6 +93,7 @@
       ansible.builtin.raw: |
         whoami
         hostname
+        touch /root/.thirdboot
         # df -h
       register: whowhatwhere
       tags: runthis
@@ -300,10 +301,10 @@
             retries: 43000
             delay: 5
 
-          - name: reboot 
+          - name: reboot
             shell: |
               shutdown -r now
-            become: true 
+            become: true
         rescue:
           - name: we failed
             shell: |
