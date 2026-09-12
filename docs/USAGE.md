@@ -112,6 +112,22 @@ the catalog.)
   the map area you have loaded, so zoom in near where you're looking for street-level
   results.
 
+### Using a USB GPS
+
+Connect the GPS receiver to the **Library device**, then open Maps. A fresh position
+automatically updates the map with a **green pin**. The **Use GPS** button
+appears when a serial receiver candidate is detected; use it to recenter and follow
+the GPS again after panning. Manual latitude/longitude entry still works.
+
+A **red pin** marks manually entered coordinates or the last known GPS position when
+the fix is lost. It does not mean a current GPS location. Open **GPS status** for
+live latitude/longitude, satellite counts, fix age, and device/connection details.
+This button is also available when no GPS is found, to help troubleshoot.
+
+Place the receiver where it has a clear view of the sky and allow time for a fix.
+Everyone viewing the map sees the location of the Library's receiver. GPS works
+offline, but map details are only available for regions loaded on the Library.
+
 ### Getting driving directions
 
 If the device has routing data loaded, the map can calculate car routes entirely offline -

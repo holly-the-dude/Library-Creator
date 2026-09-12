@@ -58,6 +58,12 @@
     # Hostname/target label for the appliance.
     target_ip: library
 
+    # Leave the port empty to discover an unambiguous USB GPS automatically.
+    # Override with -e gps_port=/dev/serial/by-id/... -e gps_baud=4800 if needed.
+    # A by-id path survives tty renumbering; baud must match the receiver's NMEA.
+    gps_port: ""
+    gps_baud: 9600
+
     # Container images expected to be available locally (loaded from these tars).
     podman_images:
       - hotspot.tar
@@ -757,10 +763,16 @@
             displayit start_08_starting_maps.jpg
           become: true
 
+        # Share host device nodes so a USB GPS can appear/reconnect after boot.
+        # This container is already privileged; never SELinux-relabel host /dev.
+        # Avoid mapping one tty node: it may not exist at boot and can change
+        # after reconnection. The GPS service retries discovery in the background.
         - name: start maps
           ansible.builtin.shell: |
             podman run -d --name library_maps --ip 10.88.0.212 --replace --privileged --restart unless-stopped \
               --add-host graphhopper:10.88.0.213 \
+              -v /dev:/dev \
+              -e GPS_PORT={{ gps_port | quote }} -e GPS_BAUD={{ gps_baud | string | quote }} \
               -p 8080:8080 -v /Library/maps:/storage/maps localhost/library_maps:latest
           register: mapsstart
 

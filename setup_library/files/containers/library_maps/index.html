@@ -2,12 +2,15 @@
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Library Maps</title>
   <!-- Vendored locally so the viewer works fully offline (no internet/CDN needed).
        Served from the image at /var/www/html/vendor/. -->
   <script src="vendor/maplibre-gl.js"></script>
   <script src="vendor/pmtiles.js"></script>
   <script src="vendor/basemaps.js"></script>
+  <!-- The controller uses the local GPS JSON endpoint and existing MapLibre API. -->
+  <script src="gps-control.js"></script>
   <link rel="stylesheet" href="vendor/maplibre-gl.css">
   <style>
     body { margin: 0; padding: 0; font-family: system-ui, sans-serif; }
@@ -225,15 +228,13 @@
     }
     #layers-control input[type="checkbox"] { width: 16px; height: 16px; }
   </style>
+  <!-- Load after panel styles so responsive GPS/toolbar rules can override them. -->
+  <link rel="stylesheet" href="gps-control.css">
 </head>
 <body>
   <div id="loading">Loading map tiles...</div>
-  <div id="gps-control">
-    <input type="text" id="gps-lat" placeholder="Lat" aria-label="Latitude">
-    <input type="text" id="gps-lon" placeholder="Lon" aria-label="Longitude">
-    <button id="gps-go" aria-label="Go to coordinates">Go</button>
-  </div>
-  <div id="gps-error"></div>
+  <!-- Panels wrap together instead of competing for the same map corners. -->
+  <div id="map-toolbar">
   <div id="controls">
     <label for="state-select">Map:</label>
     <select id="state-select"></select>
@@ -246,6 +247,53 @@
     <div id="search-hint">Searches loaded map tiles. Zoom in closer for street-level results.</div>
     <div id="search-results"></div>
   </div>
+  <!-- Manual coordinates are always usable once the map attaches. The GPS
+       action appears after serial detection and enables only for a fresh fix. -->
+  <div id="gps-control" role="group" aria-label="Map location">
+    <div class="gps-row gps-coordinates">
+      <input type="text" inputmode="decimal" id="gps-lat" placeholder="Latitude" aria-label="Latitude">
+      <input type="text" inputmode="decimal" id="gps-lon" placeholder="Longitude" aria-label="Longitude">
+      <button id="gps-go" aria-label="Go to coordinates">Go</button>
+    </div>
+    <div class="gps-row">
+      <button id="gps-locate" type="button" aria-label="Center map and follow GPS location" aria-pressed="false" hidden>Use GPS</button>
+      <button id="gps-status" type="button" aria-haspopup="dialog" aria-controls="gps-status-dialog">GPS status</button>
+    </div>
+    <span id="gps-summary" role="status">Checking GPS…</span>
+    <div id="gps-error" role="alert" hidden></div>
+  </div>
+  </div>
+  <!-- Diagnostics remain available without a receiver or loaded map. A native
+       modal handles keyboard focus/Escape; the controller updates fields using
+       textContent so serial data and device descriptions never become HTML. -->
+  <dialog id="gps-status-dialog" aria-labelledby="gps-status-heading">
+    <div class="gps-dialog-heading">
+      <h2 id="gps-status-heading">GPS status</h2>
+      <button id="gps-status-close" type="button" autofocus>Close</button>
+    </div>
+    <p id="gps-detail-status" role="status"></p>
+    <p id="gps-detail-message"></p>
+    <dl>
+      <dt>Serial device found</dt><dd id="gps-detail-detected"></dd>
+      <dt>Serial port open</dt><dd id="gps-detail-connected"></dd>
+      <dt>Valid NMEA received</dt><dd id="gps-detail-nmea"></dd>
+      <dt>Current lat, lon</dt><dd id="gps-detail-current"></dd>
+      <dt>Last known lat, lon</dt><dd id="gps-detail-last"></dd>
+      <dt>Position fix age</dt><dd id="gps-detail-age"></dd>
+      <dt>Satellites used</dt><dd id="gps-detail-used"></dd>
+      <dt>Satellites in view</dt><dd id="gps-detail-view"></dd>
+      <dt>HDOP</dt><dd id="gps-detail-hdop"></dd>
+      <dt>Altitude</dt><dd id="gps-detail-altitude"></dd>
+      <dt>Serial port</dt><dd id="gps-detail-port"></dd>
+      <dt>Baud rate</dt><dd id="gps-detail-baud"></dd>
+      <dt>Last serial data</dt><dd id="gps-detail-data-age"></dd>
+      <dt>Available devices</dt><dd id="gps-detail-ports"></dd>
+      <dt>Map tracking</dt><dd id="gps-detail-follow"></dd>
+    </dl>
+    <p class="gps-help">Green pin: current GPS fix. Red pin: last GPS position without a current fix, or manually entered coordinates. Receiver details show the latest report and may be old after a disconnect. Satellite counts in view are listed by NMEA talker (for example GP, GL, GN); overlapping counts are not added together. HDOP measures position uncertainty; lower is better.</p>
+    <p>Last checksummed NMEA sentence</p>
+    <pre id="gps-detail-sentence"></pre>
+  </dialog>
   <div id="map"></div>
 
   <!-- Routing panel: pick a start and destination (by lat,lon, by clicking the
@@ -278,6 +326,12 @@
   </div>
 
   <script>
+    // Start independently of PMTiles discovery: GPS troubleshooting should work
+    // even if discovery is slow or no map files are available. Attach the single
+    // map below once it exists; GPS may already have supplied a first fix.
+    const gpsControl = new LibraryGpsControl();
+    gpsControl.start();
+
     const STATE_CENTERS = {
       alabama: [-86.9, 32.8, 7],
       alaska: [-153.5, 64.2, 4],
@@ -478,50 +532,10 @@
         zoom: center[2]
       });
 
-      map.addControl(new maplibregl.NavigationControl());
-
-      // GPS coordinate navigation
-      let gpsMarker = null;
-      const gpsError = document.getElementById('gps-error');
-
-      function goToCoords() {
-        const latStr = document.getElementById('gps-lat').value.trim();
-        const lonStr = document.getElementById('gps-lon').value.trim();
-        gpsError.style.display = 'none';
-
-        const lat = parseFloat(latStr);
-        const lon = parseFloat(lonStr);
-
-        if (isNaN(lat) || isNaN(lon)) {
-          gpsError.textContent = 'Enter valid numbers for lat/lon';
-          gpsError.style.display = 'block';
-          return;
-        }
-        if (lat < -90 || lat > 90) {
-          gpsError.textContent = 'Latitude must be between -90 and 90';
-          gpsError.style.display = 'block';
-          return;
-        }
-        if (lon < -180 || lon > 180) {
-          gpsError.textContent = 'Longitude must be between -180 and 180';
-          gpsError.style.display = 'block';
-          return;
-        }
-
-        if (gpsMarker) gpsMarker.remove();
-        gpsMarker = new maplibregl.Marker({ color: '#e74c3c' })
-          .setLngLat([lon, lat])
-          .addTo(map);
-
-        map.flyTo({ center: [lon, lat], zoom: 14 });
-      }
-
-      document.getElementById('gps-go').addEventListener('click', goToCoords);
-      document.querySelectorAll('#gps-lat, #gps-lon').forEach(input => {
-        input.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') goToCoords();
-        });
-      });
+      // Keep navigation clear of the wrapping toolbar; gps-control.css leaves
+      // space beside the layers panel. DOM GPS markers survive setStyle().
+      map.addControl(new maplibregl.NavigationControl(), 'bottom-right');
+      gpsControl.attachMap(map);
 
       // --- Offline Address/Place Search ---
       let searchMarker = null;
@@ -633,6 +647,9 @@
           div.innerHTML = `<span class="result-name">${escapeHtml(match.name)}</span><span class="result-type">${match.type}</span>`;
           div.addEventListener('click', () => {
             // Fly to the result
+            // Explicit search navigation pauses GPS camera following so the
+            // next fix cannot immediately pull the map away from this result.
+            gpsControl.pauseFollowing();
             if (searchMarker) searchMarker.remove();
             searchMarker = new maplibregl.Marker({ color: '#2ecc71' })
               .setLngLat(match.center)
@@ -814,6 +831,8 @@
 
           const b = new maplibregl.LngLatBounds();
           for (const c of path.points.coordinates) b.extend(c);
+          // Keep the complete route in view until the user resumes GPS tracking.
+          gpsControl.pauseFollowing();
           map.fitBounds(b, { padding: 60, maxZoom: 15 });
 
           rSummary.textContent = `${fmtDist(path.distance)} • ${fmtTime(path.time)}`;
@@ -937,6 +956,8 @@
         // Rebuild the whole style: the Natural Earth roads file and the
         // Protomaps basemaps use different layer definitions, so swapping only
         // the source URL would leave incompatible layers behind.
+        // Preserve the user's selected map view across subsequent GPS updates.
+        gpsControl.pauseFollowing();
         map.setStyle(buildStyle(filename));
         map.flyTo({ center: [c[0], c[1]], zoom: c[2] });
       });

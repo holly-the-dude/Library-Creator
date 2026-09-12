@@ -1,0 +1,107 @@
+/*
+ * Loaded after index.html's existing panel styles. Keep map, search and location
+ * panels in a wrapping toolbar so each panel reserves its own space. Empty
+ * toolbar space passes pointer events through to the map; panels remain usable.
+ */
+#map-toolbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  z-index: 1000;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+#map-toolbar > * { pointer-events: auto; }
+#map-toolbar #controls, #map-toolbar #search-control, #map-toolbar #gps-control {
+  position: static;
+  box-sizing: border-box;
+}
+#map-toolbar #search-control { width: 320px; max-width: 100%; }
+#map-toolbar #gps-control {
+  margin-left: auto;
+  flex-direction: column;
+  align-items: stretch;
+  max-width: 100%;
+}
+/* Location inputs, tracking state and errors stay together as the panel wraps.
+ * Explicit hidden rules override existing button/error display declarations. */
+#gps-control .gps-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+#gps-control .gps-coordinates input { flex: 1; width: 82px; min-width: 0; }
+#gps-control #gps-status { color: #26384b; background: white; }
+#gps-control button:disabled { opacity: 0.6; cursor: default; }
+#gps-control button[aria-pressed="true"] { background: #23713d; border-color: #1a592f; }
+#gps-control button[hidden], #gps-control #gps-error[hidden] { display: none; }
+#gps-control #gps-error {
+  position: static;
+  display: block;
+  padding: 5px;
+  box-shadow: none;
+  max-width: 280px;
+}
+#gps-summary { font-size: 12px; color: #354456; max-width: 290px; }
+/* Keep keyboard focus visible on both the map controls and the modal actions. */
+#gps-control button:focus-visible, #gps-status-dialog button:focus-visible {
+  outline: 3px solid #175cd3;
+  outline-offset: 2px;
+}
+/* The native dialog uses the browser's modal layer above map overlays. Long
+ * device descriptions/NMEA wrap, while the dialog scrolls inside the viewport. */
+#gps-status-dialog {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100dvh - 32px);
+  padding: 20px;
+  border: 1px solid #d5dce2;
+  border-radius: 10px;
+  color: #243348;
+  box-shadow: 0 8px 32px #0005;
+  overflow-y: auto;
+  font-size: 14px;
+}
+#gps-status-dialog::backdrop { background: #17223588; }
+.gps-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gps-dialog-heading h2 { font-size: 20px; margin: 0; }
+.gps-dialog-heading button { background: white; border: 1px solid #bcc7d1; border-radius: 4px; padding: 8px 12px; cursor: pointer; }
+#gps-detail-status { font-weight: 700; margin-bottom: 4px; }
+#gps-detail-message { margin-top: 4px; overflow-wrap: anywhere; }
+#gps-status-dialog dl { display: grid; grid-template-columns: 155px 1fr; gap: 8px 12px; }
+#gps-status-dialog dt { color: #4b5c70; }
+#gps-status-dialog dd { margin: 0; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.gps-help { color: #526277; font-size: 12px; line-height: 1.45; }
+#gps-detail-sentence { background: #f0f3f6; padding: 10px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Leave room for MapLibre navigation, which now occupies the bottom-right. */
+#layers-control { right: 50px; }
+/* The default red pin represents a manual or last-known location; only a fresh
+ * GPS fix adds is-live. Visible text supplies the same distinction without color.
+ * Rotate an inner pin, leaving the outer transform under MapLibre's control. */
+.gps-marker { width: 32px; height: 34px; cursor: pointer; }
+.gps-marker-pin {
+  position: absolute; top: 0; left: 3px; box-sizing: border-box;
+  width: 27px; height: 27px; border: 3px solid white;
+  border-radius: 50% 50% 50% 0; background: #c43131;
+  transform: rotate(-45deg); box-shadow: 0 1px 5px #0008;
+}
+.gps-marker.is-live .gps-marker-pin { background: #218344; }
+.gps-marker-label {
+  position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+  padding: 2px 5px; border: 1px solid #adb9c4; border-radius: 3px;
+  background: white; color: #243348; white-space: nowrap; font-size: 11px; font-weight: 600;
+}
+/* Small screens get a full-width location panel and a shorter directions panel.
+ * Layers move below directions, leaving navigation accessible on the right. */
+@media (max-width: 700px) {
+  #map-toolbar { gap: 6px; }
+  #map-toolbar #controls { padding: 8px; }
+  #map-toolbar #search-control { flex: 1; min-width: 185px; padding: 8px; }
+  #search-hint { display: none; }
+  #map-toolbar #gps-control { width: 100%; margin-left: 0; padding: 8px; }
+  #gps-control .gps-coordinates input { width: 65px; }
+  #route-control { bottom: 46px; width: calc(100vw - 82px); max-width: 320px; max-height: 30vh; padding: 8px; box-sizing: border-box; }
+  #layers-control { bottom: 8px; right: auto; left: 10px; width: 170px; }
+  #layers-control.open { z-index: 1001; max-height: 40vh; overflow-y: auto; }
+  #gps-status-dialog dl { grid-template-columns: 120px 1fr; }
+}

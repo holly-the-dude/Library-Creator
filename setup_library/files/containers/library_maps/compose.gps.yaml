@@ -1,0 +1,12 @@
+# Optional Linux appliance USB GPS access, including devices plugged in after
+# startup. Run rootfully: podman compose -f compose.yaml -f compose.gps.yaml up -d
+# Matches the privileged maps container in the Library startup playbook.
+# Do not relabel the host /dev tree with :z or :Z.
+services:
+  web:
+    # Allow access to device nodes that appear after container creation.
+    privileged: true
+    volumes:
+      # Bind the directory rather than one tty node so USB reconnection works
+      # even if Linux assigns a new tty number, or no GPS was present at boot.
+      - /dev:/dev

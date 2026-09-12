@@ -6,3 +6,6 @@ setup_library/files/**/usb[0-9]*
 # Editor / OS junk
 *.swp
 .DS_Store
+
+# Generated Rasbase archive - too large for GitHub
+setup_library/files/containers/rasbase_parts/rasbase.tar

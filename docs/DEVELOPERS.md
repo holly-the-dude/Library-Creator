@@ -22,7 +22,6 @@ by Ansible playbooks and a set of Podman container definitions.
 
 ---
 ## Future work
-- Add GPS usb
 - LoRa Text messaging with other Libraries or Meshtastic or both
 ---
 
@@ -257,6 +256,27 @@ The maps service is started by the runtime `start_library.yml` MAPS block:
 > single-state extracts only. A multi-state/regional `.pbf` (>~1.5 GB) OOMs during import
 > and routing never comes up (viewing is unaffected). Tune heap via `GH_JAVA_OPTS` /
 > the container's `JAVA_OPTS`.
+
+### Maps GPS internals
+
+The maps image includes `read_gps.py` and a `gps_service.py` wrapper that reads one
+serial NMEA receiver in a background thread. The same checksum-validated parser remains
+usable from the command line. nginx proxies `/api/gps` to `127.0.0.1:8765`; GPS state
+is kept in memory and responses are never cached. Every map client sees the GPS on
+the Library appliance, including browsers using its plain HTTP hotspot.
+
+The viewer polls status, updates a green marker on valid fixes, and turns the last
+position red on invalid/stale fixes or connection loss. The GPS status dialog also
+works before a fix and shows device discovery, satellite counts, and serial errors.
+See [the maps README](../setup_library/files/containers/library_maps/README.md#usb--serial-gps)
+for controls, configuration, and troubleshooting.
+
+The runtime playbook keeps its existing privileged maps container and bind-mounts
+host `/dev` for USB discovery and hotplug. Optional `gps_port` and `gps_baud` variables
+select a receiver/baud; defaults are automatic detection and 9600. Compose device
+access is opt-in through `compose.gps.yaml`. The entrypoint supervises both nginx and
+the GPS service and forwards shutdown signals to them. No GPS is required for maps
+to start normally.
 
 ### microSD self-cloning
 
