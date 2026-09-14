@@ -128,6 +128,9 @@ Place the receiver where it has a clear view of the sky and allow time for a fix
 Everyone viewing the map sees the location of the Library's receiver. GPS works
 offline, but map details are only available for regions loaded on the Library.
 
+#### Tested GPS devices:
+- [VK-172 USB GPS](https://www.amazon.com/dp/B078Y597M6) Module G-mouse,
+
 ### Getting driving directions
 
 If the device has routing data loaded, the map can calculate car routes entirely offline -

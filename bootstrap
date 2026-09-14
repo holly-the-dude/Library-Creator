@@ -25,7 +25,7 @@ banner() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${WHITE}       Library Bootstrap Installer                ${CYAN}║${NC}"
     echo -e "${CYAN}║${YELLOW}       Raspberry Pi Edition                       ${CYAN}║${NC}"
-    echo -e "${CYAN}║${MAGENTA}       version 1.0                                ${CYAN}║${NC}"
+    echo -e "${CYAN}║${MAGENTA}       version 1.5                                ${CYAN}║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 }
 
@@ -377,7 +377,7 @@ do_first_boot() {
 
             mkfs.exfat -n Library_USB "$PART_DEVICE"
             mount "$PART_DEVICE" /Library
-	    # untar files to the library faster this way 
+	    # untar files to the library faster this way
 	    # setup_library/files/usb_base
 	    sleep 4
 	    cd /Library
@@ -391,8 +391,8 @@ do_first_boot() {
     else
         msg_info "No USB device found - skipping"
     fi
-    apt-get -y update 
-    apt-get -y upgrade 
+    apt-get -y update
+    apt-get -y upgrade
     apt-get -y install partclone fsarchiver
 
     # Download install files
@@ -400,7 +400,7 @@ do_first_boot() {
     mkdir -p /root/install
     cd /root/install
     ######################################################
-    # since we did a git clone were going to move it here 
+    # since we did a git clone were going to move it here
     # #####################################################
     cp -r /root/Library-Creator/* .
     cp  /root/Library-Creator/bootstrap /root/.
