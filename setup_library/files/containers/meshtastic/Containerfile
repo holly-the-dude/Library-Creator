@@ -1,0 +1,84 @@
+# Meshtastic USB radio + official web client for Raspberry Pi / Debian 13.
+# The Heltec runs Meshtastic firmware; the Pi bridges its serial client API.
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+LABEL description="Library Meshtastic web client and USB serial bridge"
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        bash ca-certificates curl gzip nginx python3 python3-venv unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# A venv respects Trixie's externally managed system Python installation.
+# esptool flashes the ESP32-S3 when a supported board still has factory firmware.
+ARG MESHTASTIC_VERSION=2.7.11
+ARG ESPTOOL_VERSION=5.4.0
+RUN python3 -m venv /opt/meshtastic-venv && \
+    /opt/meshtastic-venv/bin/pip install --no-cache-dir \
+        "meshtastic[cli]==${MESHTASTIC_VERSION}" \
+        "esptool==${ESPTOOL_VERSION}"
+ENV PATH="/opt/meshtastic-venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    SERIAL_DEVICE=/dev/meshtastic \
+    DATA_DIR=/var/lib/meshtastic \
+    DISCOVERY_SECONDS=60 \
+    FIRMWARE_DIR=/opt/meshtastic/firmware \
+    AUTO_FLASH=1 \
+    LORA_REGION=US \
+    ENSURE_SERIAL_ENABLED=1
+
+# Bundle only the Heltec Wireless Stick Lite V3 images from the official pinned
+# esp32s3 firmware bundle. The full zip carries every S3 board; we keep just the
+# four files device-install.sh needs and discard the rest to keep the image lean.
+ARG FIRMWARE_VERSION=2.7.26.54e0d8d
+ARG FIRMWARE_SHA256=339650ced8b8c859751f04be69c6af845fea96baca1327518f199afd2595a9d4
+RUN curl -fsSL --retry 3 \
+        "https://github.com/meshtastic/firmware/releases/download/v${FIRMWARE_VERSION}/firmware-esp32s3-${FIRMWARE_VERSION}.zip" \
+        -o /tmp/firmware-esp32s3.zip && \
+    echo "${FIRMWARE_SHA256}  /tmp/firmware-esp32s3.zip" | sha256sum -c - && \
+    mkdir -p "/opt/meshtastic/firmware" && \
+    cd /opt/meshtastic/firmware && \
+    unzip -j /tmp/firmware-esp32s3.zip \
+        "firmware-heltec-wsl-v3-${FIRMWARE_VERSION}.factory.bin" \
+        "firmware-heltec-wsl-v3-${FIRMWARE_VERSION}.mt.json" \
+        "littlefs-heltec-wsl-v3-${FIRMWARE_VERSION}.bin" \
+        "mt-esp32s3-ota.bin" && \
+    rm /tmp/firmware-esp32s3.zip && \
+    printf '%s  %s\n' \
+        f30545580ac6004a9db69bd6652a974b55c42804f8b4655a0ef971afa4d5dedb "firmware-heltec-wsl-v3-${FIRMWARE_VERSION}.factory.bin" \
+        3e62c5451afda604bac372444f058fc689dd588a87772ad4be90c228e04c1995 "mt-esp32s3-ota.bin" \
+        2c17c053b06a9e5f7afde28875ec86d0843cc52eafd24252596a54dc5a6da284 "littlefs-heltec-wsl-v3-${FIRMWARE_VERSION}.bin" \
+        77ccf076d6c90b704815f10c5528247ef1bbc9659566040e0f81f178facbf981 "firmware-heltec-wsl-v3-${FIRMWARE_VERSION}.mt.json" \
+        | sha256sum -c - && \
+    chmod -R a+rX /opt/meshtastic/firmware
+
+# The release title is 2.7.5, but its actual upstream tag is v2.7.2.
+# Static assets are architecture-independent and downloaded only at build time.
+ARG WEB_VERSION=2.7.2
+ARG WEB_SHA256=62657b85b4c24af4d44da2932b64143abdbf6e65a79fcb51fd0801d9540616e2
+RUN curl -fsSL --retry 3 \
+        "https://github.com/meshtastic/web/releases/download/v${WEB_VERSION}/build.tar" \
+        -o /tmp/meshtastic-web.tar && \
+    echo "${WEB_SHA256}  /tmp/meshtastic-web.tar" | sha256sum -c - && \
+    mkdir -p /var/www/meshtastic && \
+    tar -xf /tmp/meshtastic-web.tar -C /var/www/meshtastic && \
+    find /var/www/meshtastic -type f -name '*.gz' -exec gunzip '{}' + && \
+    test -s /var/www/meshtastic/index.html && \
+    chmod -R a+rX /var/www/meshtastic && \
+    rm /tmp/meshtastic-web.tar
+
+COPY bootstrap.py bridge.py flash.py /opt/meshtastic/
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY entrypoint.sh /usr/local/bin/start-meshtastic
+RUN chmod +x /usr/local/bin/start-meshtastic && \
+    mkdir -p /var/lib/meshtastic && \
+    chmod 700 /var/lib/meshtastic && \
+    nginx -t
+
+VOLUME ["/var/lib/meshtastic"]
+EXPOSE 8086
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8086/health >/dev/null || exit 1
+ENTRYPOINT ["/usr/local/bin/start-meshtastic"]

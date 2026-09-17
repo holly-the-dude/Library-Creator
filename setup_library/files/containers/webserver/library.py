@@ -108,7 +108,9 @@ def check_service(service):
 
     Args:
         service: dict with keys: name, display_name, internal_ip,
-                 internal_port, external_url, check_text, timeout
+                 internal_port, external_url, check_text, timeout, and an
+                 optional check_path (endpoint path such as "/bridge/status";
+                 defaults to the site root).
 
     Returns:
         HTML string for the nav link if service is up, empty string otherwise.
@@ -116,11 +118,18 @@ def check_service(service):
     internal_ip = service.get("internal_ip", "")
     internal_port = service.get("internal_port", "")
     check_text = service.get("check_text", "")
+    # Optional path to verify a specific endpoint (e.g. "/bridge/status").
+    # Defaults to the site root for the existing services.
+    check_path = service.get("check_path", "")
     timeout = service.get("timeout", 5)
     display_name = service.get("display_name", service.get("name", "Unknown"))
     external_url = service.get("external_url", "")
 
-    url = f"http://{internal_ip}:{internal_port}"
+    # Normalize the optional path so both "bridge/status" and "/bridge/status"
+    # work, and an empty/omitted value keeps the previous root-URL behavior.
+    if check_path and not check_path.startswith("/"):
+        check_path = "/" + check_path
+    url = f"http://{internal_ip}:{internal_port}{check_path}"
 
     try:
         response = requests.get(url, timeout=timeout)

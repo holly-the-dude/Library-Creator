@@ -60,6 +60,18 @@ services:
     check_text: Library Maps
     timeout: 5
 
+  - name: meshtastic
+    display_name: Meshtastic
+    internal_ip: 10.88.0.214
+    internal_port: 8086
+    external_url: http://10.1.1.1:8086
+    # Only add the nav link when the USB bridge status endpoint responds. The
+    # JSON always contains the "ready" key, so this confirms the bridge itself
+    # is answering rather than some other 200 response.
+    check_path: /bridge/status
+    check_text: '"ready"'
+    timeout: 5
+
 # -----------------------------------------------------------------------------
 # Container Definitions
 # Used by the bootstrap/setup scripts to create and manage containers.
@@ -99,4 +111,14 @@ containers:
     ports: '8080:8080'
     ip: 10.88.0.212
     drive_map: '/Library/maps:/storage/maps'
+    command: ''
+
+  - name: meshtastic
+    ports: '8086:8086'
+    ip: 10.88.0.214
+    drive_map: '/Library/meshtastic:/var/lib/meshtastic:Z'
+    # The Heltec USB radio is mapped in by its stable CP2102 by-id path. This
+    # is a --device mapping (not -v); start_library.yml only starts this
+    # container when that device is present and identifies as a Heltec.
+    device_map: '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0:/dev/meshtastic:rwm'
     command: ''

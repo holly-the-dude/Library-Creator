@@ -1,0 +1,7 @@
+HTIT-WSL_V3(Rev1.1).pdf
+urls.txt
+README.md
+compose.yaml
+tests/
+__pycache__/
+*.pyc

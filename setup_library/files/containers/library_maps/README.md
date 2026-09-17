@@ -79,9 +79,17 @@ the device must exist at container creation and reconnection may require recreat
 
 Detection prefers a GPS-labelled port, then a single USB serial port. A generic serial
 port is only a candidate until checksum-valid GPS sentences arrive. If several ports
-are possible, diagnostics list them instead of guessing. Defaults are auto-detection
-and 9600 baud; override with `-e GPS_PORT=/dev/serial/by-id/your-receiver` and
-`-e GPS_BAUD=4800`, or set these in compose's `.env`. The playbook accepts
+are possible, diagnostics list them instead of guessing. The default baud is 9600;
+override with `-e GPS_BAUD=4800`, or set it in compose's `.env`.
+
+On this appliance `GPS_PORT` is **pinned** to the u-blox receiver's persistent by-id
+path (`rebuild.sh`, `compose.yaml`, and `.env.example` default it), rather than left
+empty for auto-detection. The Meshtastic container exposes a generic **CP2102** serial
+device; with an empty `GPS_PORT`, discovery would claim that radio and fight its bridge
+for the port, and neither service would work. An explicit `GPS_PORT` makes the reader
+open only that path and never probe the CP2102. Override for a different receiver with
+`-e GPS_PORT=/dev/serial/by-id/your-receiver -e GPS_BAUD=4800`, or set it empty only on
+a maps-only host with a single receiver. The playbook accepts
 `-e gps_port=/dev/serial/by-id/your-receiver -e gps_baud=4800`.
 
 Give the receiver a clear view of the sky. GGA or RMC output is required for location;

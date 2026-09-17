@@ -19,10 +19,12 @@ services:
       - graphhopper
     ports:
       - "${MAP_PORT:-8080}:8080"
-    # Empty GPS_PORT enables discovery; GPS_BAUD must match the receiver.
-    # Host device access is opt-in through compose.gps.yaml, not these settings.
+    # GPS_PORT is pinned to the u-blox receiver's persistent by-id path so
+    # discovery never claims the Meshtastic container's generic CP2102 serial
+    # device. GPS_BAUD must match the receiver. Host device access is opt-in
+    # through compose.gps.yaml, not these settings.
     environment:
-      GPS_PORT: "${GPS_PORT:-}"
+      GPS_PORT: "${GPS_PORT:-/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_7_-_GPS_GNSS_Receiver-if00}"
       GPS_BAUD: "${GPS_BAUD:-9600}"
     volumes:
       # PMTiles + basemaps-assets + styles, exactly as the standalone container.
