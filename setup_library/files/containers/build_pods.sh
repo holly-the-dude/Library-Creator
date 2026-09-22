@@ -2,7 +2,8 @@
 #
 # build_pods.sh
 # Iterates over each subfolder that contains a Containerfile, removes the
-# existing image (podman rmi --force), then rebuilds it (podman build -t <folder>).
+# existing image (podman rmi --force), then rebuilds localhost/<folder>:latest.
+# Meshtastic and meshflash are both required by start_library.yml.
 #
 set -uo pipefail
 
@@ -21,7 +22,16 @@ fi
 
 # Work from the directory this script lives in.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit 1
+
+# Startup needs the radio bridge AND the firmware setup fallback. Fail before
+# removing images if either build context is missing from this checkout.
+for required in meshtastic meshflash; do
+    if [[ ! -f "${required}/Containerfile" ]]; then
+        echo "${RED}Missing required container: ${required}/Containerfile${RESET}" >&2
+        exit 1
+    fi
+done
 
 built=()
 failed=()
@@ -31,6 +41,7 @@ echo
 
 for dir in */; do
     name="${dir%/}"
+    tag="localhost/${name}:latest"
 
     # Only process folders that have a Containerfile (or Dockerfile).
     if [[ -f "${dir}Containerfile" ]]; then
@@ -46,21 +57,21 @@ for dir in */; do
     echo "${BOLD}${CYAN}────────────────────────────────────────────${RESET}"
 
     # Remove existing image (ignore errors if it doesn't exist).
-    echo "${YELLOW}➜ Removing existing image '${name}'...${RESET}"
-    if podman rmi --force "${name}" >/dev/null 2>&1; then
+    echo "${YELLOW}➜ Removing existing image '${tag}'...${RESET}"
+    if podman rmi --force "${tag}" >/dev/null 2>&1; then
         echo "${GREEN}  ✓ Removed existing image${RESET}"
     else
         echo "${BLUE}  • No existing image to remove${RESET}"
     fi
 
     # Build the container.
-    echo "${YELLOW}➜ Building '${name}'...${RESET}"
-    if podman build -t "${name}" -f "${containerfile}" "${dir}"; then
-        echo "${GREEN}  ✓ Successfully built '${name}'${RESET}"
-        built+=("${name}")
+    echo "${YELLOW}➜ Building '${tag}'...${RESET}"
+    if podman build -t "${tag}" -f "${dir}${containerfile}" "${dir}"; then
+        echo "${GREEN}  ✓ Successfully built '${tag}'${RESET}"
+        built+=("${tag}")
     else
-        echo "${RED}  ✗ Failed to build '${name}'${RESET}"
-        failed+=("${name}")
+        echo "${RED}  ✗ Failed to build '${tag}'${RESET}"
+        failed+=("${tag}")
     fi
     echo
 done

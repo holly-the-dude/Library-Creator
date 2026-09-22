@@ -45,8 +45,9 @@
 #   maps           10.88.0.212  :8080   (NOTE: shares .212 with the calibre
 #                                        "add new books" one-shot container)
 #   graphhopper    10.88.0.213  :8989   (maps routing; reached via maps /api/route)
-#   meshtastic     10.88.0.214  :8086   (Heltec USB radio web client + bridge;
-#                                        only started when the CP2102 radio is present)
+#   meshtastic     10.88.0.214  :8086   (detected USB Meshtastic radio + bridge)
+#   meshflash      10.88.0.214  :8086   (setup TUI when no radio responds;
+#                                        mutually exclusive with meshtastic)
 #
 # NOTE ON MODULE NAMES
 #   All task modules use Fully Qualified Collection Names (FQCN), e.g.
@@ -66,12 +67,11 @@
     gps_port: ""
     gps_baud: 9600
 
-    # Heltec Wireless Stick Lite V3 (Meshtastic) USB radio. The CP2102 by-id
-    # path is stable across tty renumbering. The meshtastic container is only
-    # started when this device is present AND identifies as a Silicon Labs
-    # CP2102 (the bridge chip on the Heltec), so an unrelated serial device
-    # never triggers it. Override with -e meshtastic_device=/dev/serial/by-id/...
-    meshtastic_device: "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0"
+    # Empty selects the single USB device that answers the Meshtastic protocol.
+    # A USB bridge VID or an esptool chip match alone does not identify Meshtastic.
+    # Override if multiple radios are attached: -e meshtastic_device=/dev/serial/by-id/...
+    meshtastic_device: ""
+    meshtastic_probe_timeout: 12
 
     # Container images expected to be available locally (loaded from these tars).
     podman_images:
@@ -832,122 +832,156 @@
           become: true
 
     ###############################
-    # MESHTASTIC — started only if the Heltec Wireless Stick Lite V3 USB radio
-    # is attached. Serves the official Meshtastic web client + USB serial bridge
-    # on 10.88.0.214:8086. The container installs firmware automatically the
-    # first time a factory Heltec is seen (see containers/meshtastic/README.md).
-    #
-    # Guard: we require BOTH the CP2102 by-id device node to exist AND the USB
-    # device to identify as a Silicon Labs CP210x (VID 10c4), so a different
-    # serial gadget on the same path never starts the radio bridge. The radio
-    # is mapped with --device (not -v). No --privileged or whole /dev mount is
-    # needed; only this one device is exposed to the container.
+    # MESHTASTIC / SETUP — one service owns port 8086. Probe actual Meshtastic
+    # protocol responses, not USB adapter brands. Firmware installation belongs
+    # to meshflash, which is offered when no configured radio responds.
+    # After flashing, reboot or rerun only this block with --tags mesh.
     ###############################
-    - name: see if the meshtastic (Heltec CP2102) radio is attached
-      ansible.builtin.shell: |
-        DEV="{{ meshtastic_device }}"
-        # 1) The stable by-id node must resolve to a real tty.
-        if [ ! -e "$DEV" ]; then
-          echo absent
-          exit 0
-        fi
-        TTY=$(readlink -f "$DEV")
-        # 2) Confirm the underlying USB device is a Silicon Labs CP210x (the
-        #    bridge chip on the Heltec). Prefer udevadm; fall back to lsusb.
-        if command -v udevadm >/dev/null 2>&1 && \
-           udevadm info -q property -n "$TTY" 2>/dev/null | grep -qi 'ID_VENDOR_ID=10c4'; then
-          echo heltec
-        elif command -v lsusb >/dev/null 2>&1 && lsusb -d 10c4: >/dev/null 2>&1; then
-          echo heltec
-        else
-          echo notheltec
-        fi
-      register: meshtastic_present
+    - name: select and start Meshtastic or firmware setup
+      tags: [mesh]
       become: true
-
-    - name: debug show meshtastic_present
-      ansible.builtin.debug:
-        var: meshtastic_present.stdout
-
-    - name: start meshtastic block
-      when: '"heltec" in meshtastic_present.stdout'
       block:
-        - name: starting meshtastic splash
-          ansible.builtin.shell: |
-            sleep 2
-            displayit start_10_starting_meshtastic.jpg
-            sleep 2
-          become: true
+        # Verify both images before stopping an existing service. Discovery uses
+        # the Meshtastic image's Python API; no host Python packages are needed.
+        - name: check local radio service images
+          ansible.builtin.command:
+            argv: [podman, image, exists, "{{ item }}"]
+          loop:
+            - localhost/meshtastic:latest
+            - localhost/meshflash:latest
+          changed_when: false
 
-        - name: see if meshtastic container is running
-          ansible.builtin.shell: |
-            podman ps |grep meshtastic >/dev/null && echo Running || echo Stopped
-          register: meshtastic
-          become: true
+        - name: release serial ports and port 8086 before discovery
+          ansible.builtin.command:
+            argv: [podman, stop, --ignore, meshtastic, meshflash]
 
-        - name: debug show meshtastic state
-          ansible.builtin.debug:
-            var: meshtastic
+        - name: find USB devices running Meshtastic
+          ansible.builtin.command:
+            argv:
+              - podman
+              - run
+              - --rm
+              - --network=none
+              - -v
+              - /dev:/host-dev:ro
+              - --device-cgroup-rule=c 188:* rw
+              - --device-cgroup-rule=c 166:* rw
+              - --entrypoint
+              - python3
+              - localhost/meshtastic:latest
+              - /opt/meshtastic/discover.py
+              - --device
+              - "{{ meshtastic_device }}"
+              - --exclude
+              - "{{ gps_port }}"
+              - --timeout
+              - "{{ meshtastic_probe_timeout | string }}"
+          register: meshtastic_probe
+          changed_when: false
 
-        # Ensure the persistent data directory exists (state/config/flash json),
-        # then start the bridge + web client. --device maps only the radio.
-        - name: start meshtastic container
-          when: '"Stopped" in meshtastic.stdout'
-          ansible.builtin.shell: |
-            install -d -m 700 /Library/meshtastic
-            podman run -d --name meshtastic --ip 10.88.0.214 --replace \
-              --restart unless-stopped \
-              --device {{ meshtastic_device | quote }}:/dev/meshtastic:rwm \
-              -p 8086:8086 \
-              -v /Library/meshtastic:/var/lib/meshtastic:Z \
-              localhost/meshtastic:latest
-            sleep 3
-            podman ps -a |grep meshtastic|head -n1|awk '{print "podman logs "$1}'|sh
-          register: meshtasticstart
-          become: true
-
-        - name: debug show meshtasticstart
-          ansible.builtin.debug:
-            var: meshtasticstart.stdout_lines
-
-        # Health check: the bridge serves /health and /bridge/status as soon as
-        # nginx + the bridge process are up, independent of the radio handshake,
-        # so an unflashed/booting radio does not fail startup. We wait for the
-        # status endpoint to answer (it always contains the "ready" key).
-        - name: wait till meshtastic bridge is answering
-          ansible.builtin.shell: |
-            curl -s http://10.1.1.1:8086/bridge/status | grep -q '"ready"' && echo started || echo failed
-          register: meshtasticwait
-          ignore_errors: true
-          until: '"started" in meshtasticwait.stdout'
-          retries: 8
-          delay: 15
-
-        - name: set fact meshtastic up
-          when: '"started" in meshtasticwait.stdout'
+        - name: read Meshtastic discovery result
           ansible.builtin.set_fact:
-            meshtasticup: true
-
-        - name: set fact meshtastic down
-          when: '"started" not in meshtasticwait.stdout'
-          ansible.builtin.set_fact:
+            meshtastic_detection: "{{ meshtastic_probe.stdout | from_json }}"
             meshtasticup: false
 
-        - name: meshtastic started splash
-          when: meshtasticup
-          ansible.builtin.shell: |
-            sleep 2
-            displayit start_10_meshtastic_started.jpg
-            sleep 2
-          become: true
+        - name: require an explicit choice when multiple Meshtastic radios respond
+          ansible.builtin.assert:
+            that: meshtastic_detection.status != 'ambiguous'
+            fail_msg: >-
+              Multiple Meshtastic radios responded. Rerun with
+              -e meshtastic_device=/dev/serial/by-id/your-radio.
+              Detected radios: {{ meshtastic_detection.devices | default([]) }}
 
-        - name: meshtastic failed splash
-          when: not meshtasticup
-          ansible.builtin.shell: |
-            sleep 2
-            displayit start_10_meshtastic_failed.jpg
-            sleep 2
-          become: true
+        - name: start configured Meshtastic radio
+          when: meshtastic_detection.status == 'found'
+          block:
+            - name: starting Meshtastic splash
+              ansible.builtin.command: displayit start_10_starting_meshtastic.jpg
+
+            - name: ensure persistent radio data directory
+              ansible.builtin.file:
+                path: /Library/meshtastic
+                state: directory
+                mode: '0700'
+
+            - name: start bridge with the detected serial device
+              ansible.builtin.command:
+                argv:
+                  - podman
+                  - run
+                  - -d
+                  - --name=meshtastic
+                  - --ip=10.88.0.214
+                  - --replace
+                  - --restart=unless-stopped
+                  - --device
+                  - "{{ meshtastic_detection.device }}:/dev/meshtastic:rwm"
+                  - -p
+                  - 8086:8086
+                  - -v
+                  - /Library/meshtastic:/var/lib/meshtastic:Z
+                  - localhost/meshtastic:latest
+
+            - name: wait for radio handshake and discovery to finish
+              ansible.builtin.uri:
+                url: http://127.0.0.1:8086/bridge/status
+                return_content: true
+              register: meshtasticwait
+              until: (meshtasticwait.json | default({})).get('ready', false) | bool
+              retries: 12
+              delay: 10
+              ignore_errors: true
+
+            - name: record radio availability
+              ansible.builtin.set_fact:
+                meshtasticup: "{{ (meshtasticwait.json | default({})).get('ready', false) | bool }}"
+
+            - name: show Meshtastic startup result
+              ansible.builtin.command:
+                argv:
+                  - displayit
+                  - "{{ 'start_10_meshtastic_started.jpg' if meshtasticup else 'start_10_meshtastic_failed.jpg' }}"
+
+        - name: offer firmware setup when no Meshtastic radio responds
+          when: meshtastic_detection.status == 'not_found'
+          block:
+            - name: starting firmware setup splash
+              ansible.builtin.command: displayit start_11_meshflasher.jpg
+
+            - name: start meshflash on the Meshtastic web port
+              ansible.builtin.command:
+                argv:
+                  - podman
+                  - run
+                  - -d
+                  - --name=meshflash
+                  - --ip=10.88.0.214
+                  - --replace
+                  - --restart=unless-stopped
+                  - -p
+                  - 8086:8086
+                  - -v
+                  - /dev:/host-dev:ro
+                  - --device-cgroup-rule=c 188:* rw
+                  - --device-cgroup-rule=c 166:* rw
+                  - localhost/meshflash:latest
+
+            - name: wait for firmware setup web terminal
+              ansible.builtin.uri:
+                url: http://127.0.0.1:8086/
+                status_code: 200
+              register: meshflashwait
+              until: meshflashwait.status | default(0) == 200
+              retries: 12
+              delay: 2
+
+            - name: explain firmware setup handoff
+              ansible.builtin.debug:
+                msg: >-
+                  No Meshtastic radio responded. Open http://library:8086 to
+                  install firmware using the radio plugged into the Pi. After
+                  flashing completes, reboot or run
+                  ansible-playbook /root/start_library.yml --tags mesh.
 
     ###############################
     # MUSIC (LMS) — started only if media exists under /Library/music.

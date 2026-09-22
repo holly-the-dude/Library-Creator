@@ -1,0 +1,25 @@
+services:
+  meshflash:
+    image: localhost/meshflash:latest
+    container_name: meshflash
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-localhost/rasbase_master:latest}"
+        FIRMWARE_STABLE_COUNT: "${FIRMWARE_STABLE_COUNT:-1}"
+        FIRMWARE_ALPHA_COUNT: "${FIRMWARE_ALPHA_COUNT:-1}"
+        FIRMWARE_BOARDS: "${FIRMWARE_BOARDS:-}"
+    restart: unless-stopped
+    ports:
+      - "${MESHFLASH_BIND:-0.0.0.0}:8086:8086"
+    environment:
+      TTYD_CREDENTIAL: "${TTYD_CREDENTIAL:-}"
+      FLASH_BAUD: "${FLASH_BAUD:-115200}"
+    # Rootful Podman/Docker: see USB nodes after unplug/replug or ROM reset.
+    # Keep the container's own /dev/pts for the web terminal's PTY.
+    volumes:
+      - /dev:/host-dev:ro
+    device_cgroup_rules:
+      - 'c 188:* rw' # ttyUSB
+      - 'c 166:* rw' # ttyACM

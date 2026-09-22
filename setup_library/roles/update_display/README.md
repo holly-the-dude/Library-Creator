@@ -1,38 +1,42 @@
-Role Name
-=========
+# update_display role
 
-A brief description of the role goes here.
+This role sends a status message to an existing Library display HTTP service.
+It does not install the display service or configure a TFT/HDMI screen. Current
+runtime startup also uses the host's `displayit` helper for splash images; see the
+[developer guide](../../../docs/DEVELOPERS.md#display-abstraction).
 
-Requirements
-------------
+## Requirements and behavior
 
-Any pre-requisites that may not be covered by Ansible itself or the role should be mentioned here. For instance, if the role uses the EC2 module, it may be a good idea to mention in this section that the boto package is required.
+Ansible must be able to reach `http://<dhost>:6901/upload-text`. The role POSTs a
+raw `html_data` body containing **Hotspot Started**, colored yellow with a white
+border, then prints the registered response with `debug`. The request task uses
+`become: true`.
 
-Role Variables
---------------
+The task accepts response status `200`, `500` and `-1`; task success alone is not
+proof that the display updated. Inspect the registered response when diagnosing
+connection or server errors.
 
-A description of the settable variables for this role should go here, including any variables that are in defaults/main.yml, vars/main.yml, and any variables that can/should be set via parameters to the role. Any variables that are read from other roles and/or the global scope (ie. hostvars, group vars, etc.) should be mentioned here as well.
+## Variables
 
-Dependencies
-------------
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `dhost` | `library` | Hostname/IP of the display service |
 
-A list of other roles hosted on Galaxy should go here, plus any details in regards to parameters that may need to be set for other roles, or variables that are used from other roles.
+Message text, color and border are currently task-local variables in
+[`tasks/main.yml`](tasks/main.yml). Edit that task to change them; they are not
+exposed as configurable role defaults. No role dependencies are declared.
 
-Example Playbook
-----------------
+## Example
 
-Including an example of how to use your role (for instance, with variables passed in as parameters) is always nice for users too:
+From a playbook under `setup_library/`:
 
-    - hosts: servers
-      roles:
-         - { role: username.rolename, x: 42 }
+```yaml
+- hosts: localhost
+  connection: local
+  roles:
+    - role: update_display
+      dhost: 127.0.0.1
+```
 
-License
--------
-
-BSD
-
-Author Information
-------------------
-
-An optional section for the role authors to include contact information, or a website (HTML is not allowed).
+The receiver must already be running. For the deployed startup flow, see
+[`start_library.yml`](../../files/start_library.yml).

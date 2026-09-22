@@ -23,6 +23,12 @@ podman build -t localhost/music:latest .
 ```
 
 This pulls `docker.io/epoupon/lms:latest` (Alpine-based) and applies customizations.
+It does not use the shared `rasbase_master` image. Run appliance Podman commands
+as root or with `sudo` so builds and startup use the same image store.
+
+The parent [`build_pods.sh`](../build_pods.sh) includes music and both radio
+services. See the [shared build and export workflow](../../../../docs/DEVELOPERS.md#container-build-pipeline)
+for packaging images for offline deployment.
 
 ## Running the Container
 

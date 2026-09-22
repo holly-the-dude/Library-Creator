@@ -1,6 +1,8 @@
 # Webserver Container
 
-The webserver container is the main entry point for the Library system. It runs nginx to serve web content and a Python management script (`library.py`) that monitors and controls the other library service containers (wiki, music, ebook, maps, etc.).
+The webserver container is the main entry point for the Library system. It runs nginx to serve web content and a Python management script (`library.py`) that checks the other Library services and updates navigation links. Container startup
+and radio selection are handled by the runtime
+[`start_library.yml`](../../start_library.yml) playbook.
 
 ## File Structure
 
@@ -16,17 +18,18 @@ webserver/
 
 ## Building the Container
 
-Build with the default base image (rasbase - Debian 11 bullseye, arm64):
+Build with the default `localhost/rasbase_master:latest` base (Debian 13 Trixie,
+ARM64). Use the appliance's rootful Podman image store:
 
 ```bash
-podman build -t localhost/webserver:latest .
+sudo podman build -t localhost/webserver:latest -f Containerfile .
 ```
 
-Build with rasbase_trixie (Debian 13 trixie) to test newer packages:
-
-```bash
-podman build --build-arg BASE_IMAGE=localhost/rasbase_trixie:latest -t localhost/webserver:latest .
-```
+The parent [`build_pods.sh`](../build_pods.sh) builds this image along with the
+other Library services, including both radio images. See the
+[build and export workflow](../../../../docs/DEVELOPERS.md#container-build-pipeline)
+for preparing the base image and offline tar files. Run the Podman commands below
+as root, or prefix them with `sudo`.
 
 ## Running the Container
 
@@ -67,7 +70,8 @@ webserver:
 
 ### `services` — Services to monitor
 
-Each service entry tells library.py how to check if a service is running. The script makes an HTTP request to `internal_ip:internal_port`, looks for `check_text` in the response, and if found, creates a nav bar link pointing to `external_url`:
+Each service entry tells library.py how to check if a service is running. The script makes an HTTP request to `internal_ip:internal_port` with an optional
+`check_path` (default: the root path), looks for `check_text` in the response, and if found, creates a nav bar link pointing to `external_url`:
 
 ```yaml
 services:
@@ -88,9 +92,37 @@ services:
     timeout: 10
 ```
 
+### Meshtastic and setup share one navigation link
+
+The radio check uses the published **host** port because startup can select
+Meshtastic or meshflash:
+
+```yaml
+  - name: meshtastic
+    display_name: "Meshtastic"
+    internal_ip: 10.1.1.1
+    internal_port: 8086
+    check_path: /
+    external_url: "http://10.1.1.1:8086"
+    check_text: "<html"
+    timeout: 5
+```
+
+This checks whether a page is available; it does not prove that the radio is ready.
+The bridge exposes readiness separately at `/bridge/status`. The runtime playbook
+selects the client for a responding USB radio, or firmware setup if none responds.
+It owns the two mutually exclusive containers at `10.88.0.214`. Do not add a
+second static radio definition here. See the
+[radio deployment notes](../meshflash/README.md#library-startup-integration),
+including the required match between published and listening ports.
+
+Rebuild and recreate the webserver after updating its bundled configuration so
+existing installations use this shared-port check.
+
 ### `containers` — Container definitions
 
-Defines all containers managed by the library system (used by the bootstrap/setup scripts):
+Records static container metadata for setup scripts. This section does not itself
+start containers; keep the runtime playbook in sync when adding a service:
 
 ```yaml
 containers:
@@ -118,7 +150,7 @@ containers:
   # ... existing containers ...
   - name: video
     ports: '8096:8096'
-    ip: 10.88.0.213
+    ip: 10.88.0.215
     drive_map: '/Library/video:/media:ro'
     command: ''
 ```
@@ -130,14 +162,16 @@ services:
   # ... existing services ...
   - name: video
     display_name: "Video Streaming"
-    internal_ip: 10.88.0.213
+    internal_ip: 10.88.0.215
     internal_port: 8096
     external_url: "http://10.1.1.1:8096"
     check_text: "jellyfin"
     timeout: 5
 ```
 
-3. Rebuild and restart the webserver container to pick up the new config:
+3. Add the service startup task to [`start_library.yml`](../../start_library.yml),
+   including its content mount and published port. Deploy the updated playbook.
+4. Rebuild and restart the webserver container to pick up the new config:
 
 ```bash
 podman build -t localhost/webserver:latest .

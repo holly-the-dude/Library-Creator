@@ -7,7 +7,6 @@ second Python protocol client would interfere with its configuration download.
 """
 
 import collections
-from contextlib import suppress
 import json
 import logging
 import math
@@ -25,7 +24,6 @@ from meshtastic.protobuf import mesh_pb2
 import serial
 
 from bootstrap import bootstrap_radio
-import flash
 
 LOG = logging.getLogger("meshtastic.bridge")
 MAGIC = b"\x94\xc3"
@@ -90,25 +88,10 @@ def open_serial(device):
 
 
 class RadioBridge:
-    def __init__(self, device, data_dir, discovery_seconds=60,
-                 firmware_dir=None, auto_flash=True, flash_probe_after=3):
+    def __init__(self, device, data_dir, discovery_seconds=60):
         self.device = device
         self.data_dir = Path(data_dir)
         self.discovery_seconds = discovery_seconds
-        self.firmware_dir = firmware_dir
-        self.auto_flash = auto_flash
-        # Only probe/flash after this many consecutive handshake failures on a
-        # first-seen board, so a transient boot-timing miss never resets it.
-        self.flash_probe_after = max(1, int(flash_probe_after))
-        # A "known good" radio (state.json/flash.json present) is normally never
-        # probed. But its record can be stale -- e.g. the board was wiped or
-        # swapped for a blank one, or the volume persisted across a reinstall.
-        # After this many consecutive failures we run a READ-ONLY blank-app
-        # probe; only a board confirmed to have no valid app image is reflashed.
-        # This is deliberately higher than flash_probe_after so a working radio
-        # riding out a long transient (contention, slow boot) is left alone.
-        self.reprovision_after = max(self.flash_probe_after,
-                                     int(flash_probe_after) * 4)
         self.stop = threading.Event()
         self.lock = threading.RLock()
         self.stream = None
@@ -116,14 +99,6 @@ class RadioBridge:
         self.metadata = {}
         self.error = "Waiting for the radio configuration and node discovery"
         self.dropped_packets = 0
-        # Guard against a reflash loop: attempt an automatic flash at most once
-        # per detected unflashed board until a Meshtastic handshake succeeds.
-        self._flash_attempted = False
-        self._consecutive_failures = 0
-        # A known-good radio is blank-probed at most once per session. Without
-        # this, a merely-unreachable (not blank) known-good radio would be
-        # RTS-reset by the probe every reprovision_after cycles.
-        self._reprovision_probed = False
 
     def status(self):
         with self.lock:
@@ -169,108 +144,12 @@ class RadioBridge:
                 return payload
             return self.packets.popleft() if self.packets else b""
 
-    def _radio_known_good(self):
-        """True when this setup has ever completed a handshake or been flashed.
-
-        ``state.json`` is written only after a successful configuration/backup,
-        and ``flash.json`` only after a successful flash. Either means a real
-        Meshtastic radio has answered here before, so a later handshake timeout
-        is a transient boot/timing issue -- never a reason to reset or reflash
-        the board. Probing would hard-reset a working radio via RTS and can
-        knock it offline, so we must not probe once a radio is known good.
-        """
-        for name in ("state.json", "flash.json"):
-            if (self.data_dir / name).exists():
-                return True
-        return False
-
-    def _clear_known_good(self):
-        """Remove the stale working/flashed record so the board is first-seen.
-
-        Called only after a read-only probe confirmed the board is blank, so we
-        are not discarding the record of a healthy radio.
-        """
-        for name in ("state.json", "flash.json", "nodes.json", "config.yaml"):
-            with suppress(OSError):
-                (self.data_dir / name).unlink()
-
-    def _bootstrap_with_autoflash(self):
-        """Bootstrap the radio; flash a genuinely unflashed or wiped board.
-
-        The esptool probe hard-resets the ESP32-S3, so it must never run against
-        a radio that already works. Two paths reach a flash:
-
-        * First-seen board (no state/flash record): after ``flash_probe_after``
-          consecutive failures, probe and flash a matching unflashed board.
-        * Known-good board (record present) that keeps failing: normally left
-          alone, because a timeout is usually transient. But after the higher
-          ``reprovision_after`` threshold we run a READ-ONLY blank-app probe;
-          only if the board is confirmed to have no valid app image (wiped or
-          swapped for a blank one) do we clear the stale record and reflash.
-
-        A single flash is attempted per session; a successful handshake re-arms
-        everything.
-        """
-        try:
-            metadata = bootstrap_radio(self.device, self.data_dir,
-                                       self.discovery_seconds)
-            self._flash_attempted = False   # a working radio re-arms the guard
-            self._consecutive_failures = 0
-            self._reprovision_probed = False
-            return metadata
-        except Exception as exc:
-            self._consecutive_failures += 1
-            if not self.auto_flash or self._flash_attempted or self.stop.is_set():
-                raise
-            known_good = self._radio_known_good()
-            if known_good:
-                # Only reconsider a known-good radio after a long, sustained
-                # failure, and only reflash if a read-only probe proves it is
-                # genuinely blank. A working radio never reaches this state.
-                if (self._consecutive_failures < self.reprovision_after
-                        or self._reprovision_probed):
-                    raise
-                self._reprovision_probed = True  # probe at most once per session
-                LOG.warning("Known-good radio has failed %d times; running a "
-                            "read-only blank-app probe to check the flash",
-                            self._consecutive_failures)
-                if not flash.app_is_blank(self.device):
-                    LOG.info("Board is not blank (or is unreachable); leaving it "
-                             "untouched and continuing to retry")
-                    raise
-                LOG.warning("Board reports a blank/invalid app image; the stored "
-                            "record is stale. Reprovisioning firmware.")
-                self._clear_known_good()
-            elif self._consecutive_failures < self.flash_probe_after:
-                # Give a first-seen board a few cycles to boot before resetting.
-                LOG.info("Handshake failed (%s); attempt %d of %d before probing "
-                         "for an unflashed board", exc, self._consecutive_failures,
-                         self.flash_probe_after)
-                raise
-            else:
-                LOG.warning("Handshake failed %d times (%s); checking for an "
-                            "unflashed supported board",
-                            self._consecutive_failures, exc)
-            self._flash_attempted = True
-            with self.lock:
-                self.error = "Checking for an unflashed board to install firmware"
-            flashed = flash.auto_flash(self.device, self.firmware_dir,
-                                       self.data_dir, self.auto_flash)
-            if not flashed or self.stop.is_set():
-                raise
-            LOG.info("Firmware installed; retrying the Meshtastic handshake")
-            metadata = bootstrap_radio(self.device, self.data_dir,
-                                       self.discovery_seconds)
-            self._flash_attempted = False
-            self._consecutive_failures = 0
-            self._reprovision_probed = False
-            return metadata
-
     def run(self):
         while not self.stop.is_set():
             stream = None
             try:
-                metadata = self._bootstrap_with_autoflash()
+                metadata = bootstrap_radio(self.device, self.data_dir,
+                                           self.discovery_seconds)
                 if self.stop.is_set():
                     break
                 stream = open_serial(self.device)
@@ -386,17 +265,9 @@ def main():
     discovery = float(os.environ.get("DISCOVERY_SECONDS", "60"))
     if not math.isfinite(discovery) or not 0 <= discovery <= 3600:
         raise ValueError("DISCOVERY_SECONDS must be between 0 and 3600")
-    auto_flash = os.environ.get("AUTO_FLASH", "1").strip().lower() not in (
-        "0", "false", "no", "off", "")
-    try:
-        probe_after = int(os.environ.get("FLASH_PROBE_AFTER", "3"))
-    except ValueError:
-        probe_after = 3
     bridge = RadioBridge(os.environ.get("SERIAL_DEVICE", "/dev/meshtastic"),
                          os.environ.get("DATA_DIR", "/var/lib/meshtastic"),
-                         discovery,
-                         os.environ.get("FIRMWARE_DIR", "/opt/meshtastic/firmware"),
-                         auto_flash, probe_after)
+                         discovery)
     worker = threading.Thread(target=bridge.run, daemon=True, name="radio")
     worker.start()
     server = BridgeServer(("127.0.0.1", 8766), bridge)

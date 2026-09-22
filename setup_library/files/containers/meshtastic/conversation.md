@@ -1,5 +1,11 @@
 # Create Meshtastic Podman container
 
+> Historical development transcript, preserved for context. Commands, fixed USB
+> paths and flashing behavior below may describe earlier implementations.
+> Use the [current Meshtastic README](README.md) for operation and discovery,
+> and [meshflash](../meshflash/README.md) for firmware installation. The current
+> Meshtastic container has no automatic flashing code.
+
 > look at the urls.txt and the pdf in this folder. I want to create a podman container that will use heltec stick light see pdf thedevice is located  /dev/serial/by-id/usb-Silicon\_Labs\_CP2102\_USB\_to\_UART\_Bridge\_Controller\_0001-if00-port0 -> ../../ttyUSB0 this container will run on pi running trixie. Look at the other containers ../\* but stay in the containers folder. I want this container to run meshtastic. It will serve up a web interface using nginx in the container with the meshtastic software the exposed port should be 8086 also look at nodes that are out there and name it like library0001 but if 0001 is taken increment it but if the meshtastic software allows saving config data it the podman container will map -v /Library/meshtastic:\<what ever folder needs to be mapped internally>
 
 <details><summary>27 previous messages</summary>
@@ -178,7 +184,7 @@ Added the container setup entirely within `containers/meshtastic`:
 
 **25 tests passed**, including simulated USB communication and disconnect handling. The image and physical radio remain untested; SSH was skipped as requested.
 
-[Build/run instructions and firmware prerequisites](./Library-Creator/setup_library/files/containers/meshtastic/README.md).
+[Build/run instructions and firmware prerequisites](README.md).
 
 > bridge status is :{"ready": false, "serial\_device": "/dev/meshtastic", "error": "MeshInterfaceError: Timed out waiting for connection completion", "queued\_packets": 0, "dropped\_packets": 0} the container built just fine and the pod is up
 

@@ -7,24 +7,25 @@ The wiki container runs [kiwix-serve](https://github.com/kiwix/kiwix-tools) to p
 ```
 wiki/
 ├── Containerfile                            # Container build instructions
-├── kiwix-tools_linux-aarch64-3.8.2.tar.gz  # Pre-compiled kiwix binaries (arm64)
+├── kiwix-tools_linux-aarch64-3.5.0-1.tar.gz  # Pre-compiled kiwix binaries (arm64)
 ├── start_server                             # Shell script to start kiwix-serve
 └── README.md
 ```
 
 ## Building the Container
 
-Build with the default base image (rasbase - Debian 11 bullseye, arm64):
+Build with the default `localhost/rasbase_master:latest` base (Debian 13 Trixie,
+ARM64). Use the appliance's rootful Podman image store:
 
 ```bash
-podman build -t localhost/wiki:latest .
+sudo podman build -t localhost/wiki:latest -f Containerfile .
 ```
 
-Build with rasbase_trixie (Debian 13 trixie) to test newer packages:
-
-```bash
-podman build --build-arg BASE_IMAGE=localhost/rasbase_trixie:latest -t localhost/wiki:latest .
-```
+The parent [`build_pods.sh`](../build_pods.sh) builds this image along with the
+other Library services, including both radio images. See the
+[build and export workflow](../../../../docs/DEVELOPERS.md#container-build-pipeline)
+for preparing the base image and offline tar files. Run the Podman commands below
+as root, or prefix them with `sudo`.
 
 ## Running the Container
 

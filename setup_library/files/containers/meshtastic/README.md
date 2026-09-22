@@ -1,29 +1,20 @@
 # Meshtastic on the Library Pi
 
 One Podman container serves the **official Meshtastic web client through nginx
-on port 8086**, and bridges HTTP to the Heltec's USB serial connection. It follows
+on port 8086**, and bridges HTTP to the radio's USB serial connection. It follows
 the neighboring containers' `localhost/rasbase_master:latest` base (Debian 13
 Trixie ARM64). A plain Debian Trixie base also works.
 
 ## Hardware and firmware
 
-The supplied `HTIT-WSL_V3(Rev1.1).pdf` (pages 5–6 and 10) identifies the **Heltec
-Wireless Stick Lite V3**: ESP32-S3FN8, SX1262, CP2102, USB-C. Meshtastic firmware
-runs on that board; this container runs the Python client/CLI and web bridge.
-`meshtasticd` is for Linux-native radio hardware and is not needed for this USB
-device.
-
-Before starting, attach the matching LoRa antenna. If the connected stick is a
-**Heltec Wireless Stick Lite V3** still running factory firmware, the container
-**installs Meshtastic firmware automatically** on first start (see
-[Automatic firmware install](#automatic-firmware-install)). To flash a different
-board or do it manually, use the [official web flasher](https://flasher.meshtastic.org/)
-from a computer connected to its USB port, and stop anything using that serial
-port while flashing.
+This container connects to a USB radio already running Meshtastic, including
+Heltec and LilyGo boards. It runs the official Python client and HTTP bridge;
+firmware runs on the radio itself. It contains no esptool, firmware binaries or
+automatic flashing code. Firmware installation and recovery belong to
+[meshflash](../meshflash/README.md). Attach the correct LoRa antenna before use.
 
 Set the LoRa region for the physical radio/location with a Meshtastic client.
-The HF model supports 863–928 MHz; the LF model covers 470–510 MHz. The container
-**preserves the existing region, channels, keys, modem settings, and role** on a
+The container **preserves the existing region, channels, keys, modem settings, and role** on a
 radio that already has them. On a **freshly provisioned** radio (one that reports
 region `UNSET`) it applies appliance defaults once, so a new stick comes up usable
 without manual configuration:
@@ -40,88 +31,84 @@ Each write is guarded on the current value, so a steady-state radio is never
 rewritten. If `LORA_REGION` is empty and the radio is `UNSET`, configure the
 region with a client before expecting mesh traffic.
 
-## Automatic firmware install
+## Automatic service selection at Library startup
 
-The image bundles the pinned, checksum-verified Meshtastic firmware for the
-**Heltec Wireless Stick Lite V3** (`firmware-heltec-wsl-v3`, release
-`v2.7.26.54e0d8d`) and `esptool`. When the bridge starts and the Meshtastic
-serial handshake fails, it probes the attached chip with esptool. Only if that
-probe positively identifies an **ESP32-S3** (the exact chip this firmware
-targets) does it install the firmware, then retry the handshake. It mirrors the
-official `device-install.sh` sequence: full flash erase, factory image at `0x0`,
-then the OTA stub and littlefs image at the offsets from the firmware metadata.
+`start_library.yml` scans `/dev/ttyUSB*` and `/dev/ttyACM*`, prefers stable
+`/dev/serial/by-id/` names for mappings, and excludes identifiable GPS receivers
+and the explicitly configured `gps_port`. Each candidate must complete a
+Meshtastic configuration handshake. An ESP chip reported by the host's esptool
+or a particular USB adapter VID is not sufficient evidence of Meshtastic.
+Discovery runs in a temporary container using this image's Python client, with
+no network, firmware writes, naming or configuration changes.
 
-Safety and controls:
+- One responding radio: stop meshflash and start meshtastic with that device
+  mapped to `/dev/meshtastic`, serving `http://library:8086`.
+- No responding radio (including no USB radio or a board with factory firmware):
+  stop meshtastic and start meshflash at the same URL with USB hotplug access.
+  Both services use `8086:8086`. Firmware installation requires confirmation
+  in the TUI. See [flasher upgrades](../meshflash/README.md#port-configuration-and-upgrades)
+  when replacing an older image.
+- Multiple responding radios: stop with a message to set
+  `-e meshtastic_device=/dev/serial/by-id/your-radio`. The override is still
+  checked for a Meshtastic response.
 
-- A stick that already answers the Meshtastic protocol is **never touched**.
-  Flashing only runs after a failed handshake.
-- The board is identified by **two** bootloader-level signals before any write:
-  the chip must be an **ESP32-S3** and its detected flash size must match the
-  bundled firmware's partition scheme (**8MB**). Any other chip, a different
-  flash size (for example a 16MB LilyGo ESP32-S3), or a port with nothing
-  attached is left alone. Those boards must be flashed with the
-  [official web flasher](https://flasher.meshtastic.org/).
-- A radio that has ever worked here is normally **never probed or flashed
-  again**. Once a handshake succeeds (`state.json`) or a flash completes
-  (`flash.json`), later handshake timeouts are treated as transient and only
-  retried. This matters because the esptool probe hard-resets the board over
-  RTS; probing a working radio could knock it offline.
-- The stored record can become **stale** — for example the board was wiped or
-  swapped for a blank one, or the host volume persisted across a reinstall. So
-  after a much longer run of consecutive failures (four times
-  `FLASH_PROBE_AFTER`) the container runs a **read-only** blank-app probe: it
-  resets the board and listens. Only if the board is confirmed to have no valid
-  app image (its ROM loops `invalid header: 0xffffffff` and emits no Meshtastic
-  frames) does it clear the stale record and reprovision. A working radio never
-  reports that state, and a merely unreachable radio is probed at most once per
-  session and left untouched.
-- A genuinely first-seen board is only probed after several consecutive
-  handshake failures (`FLASH_PROBE_AFTER`, default 3), so a one-off boot-timing
-  miss never triggers a reset.
-- Flashing is attempted **at most once** per detected unflashed board until a
-  handshake succeeds, so a stuck device does not loop erase/write.
-- Flashing **erases the board's entire flash and any prior settings**. Because
-  the container preserves settings on radios that already run Meshtastic, this
-  only affects a factory or non-Meshtastic stick.
-- After a successful install the container writes `flash.json` (version, board,
-  chip, flash size, timestamp) into the host volume as a record.
-- Set `AUTO_FLASH=0` to disable automatic flashing entirely. `FLASH_PROBE_AFTER`
-  tunes how many failures precede a probe. The build arg `FIRMWARE_VERSION`
-  (with matching `FIRMWARE_SHA256`) and `FIRMWARE_DIR` control which images are
-  bundled and where they are read from.
+Both images must be built/loaded locally. Rebuild the Meshtastic image when
+updating from the old automatic-flashing implementation; discovery needs the
+new `/opt/meshtastic/discover.py`. Copy the updated playbook to
+`/root/start_library.yml` using the normal installer/deployment workflow.
+Also redeploy the webserver image/configuration: its Meshtastic navigation
+check now uses the shared host port, so the link appears for either service.
 
-Rebuilding or restarting the container never reflashes a working radio; the
-firmware lives on the stick's flash, not in the container.
+After flashing has finished and the board has rebooted, reboot the Pi or run:
 
-### Errors do not trigger a reflash
+```sh
+sudo ansible-playbook /root/start_library.yml --tags mesh
+```
 
-Automatic flashing exists to provision a **brand-new, never-seen, factory
-ESP32-S3 board**, not to react to errors on a radio the container already knows.
-A handshake timeout is an ambiguous symptom: it is far more often caused by
-serial-port contention (see the maps `GPS_PORT` note below), a USB line-state
-wedge, an unplugged or mid-boot radio, or a stale device node than by bad
-firmware. Reflashing on such an error would erase a healthy radio's region,
-channels, and keys, and — because flashing itself hard-resets the board over
-RTS — could provoke the next error and loop.
+This reruns only radio service selection. It stops both radio containers before
+probing, then creates the selected one so a changed USB mapping is refreshed.
+Do not run it during a flash. There is no background switch while the TUI is
+open; selection happens at startup or when this command is run.
 
-So for recurring errors on a known radio the container is deliberately
-conservative: it keeps retrying the handshake every 10 seconds and reports the
-error at `/bridge/status`, but never reflashes on its own. If you ever confirm
-the flash is genuinely corrupt — the board's serial output shows the ROM
-bootloader repeating `invalid header: 0xffffffff` (a blank/invalid app image)
-rather than Meshtastic frames — reflash **manually and deliberately** with the
-one-off CLI below or the [official web flasher](https://flasher.meshtastic.org/),
-after first copying `config.yaml` since the erase removes all settings.
+`meshtastic_probe_timeout` defaults to 12 seconds per candidate, plus up to five
+seconds for client cleanup. Increase it for a radio that boots slowly. A
+nonresponding/busy radio is offered setup, but is never erased automatically.
+When a detected radio's bridge later fails, it reports the error and retries;
+it does not switch to flashing or discard existing backups.
+
+## Build both radio images
+
+From the repository root, after preparing `rasbase_master`:
+
+```sh
+cd setup_library/files/containers
+sudo ./build_pods.sh
+sudo ./create_tar_pods.sh
+```
+
+The build script requires both radio Containerfiles and builds each as
+`localhost/<folder>:latest`. The export script includes `meshtastic.tar` and
+`meshflash.tar`, with the flasher's offline firmware inside its image. Run the
+full build during maintenance, after any flash finishes, because it removes old
+images before rebuilding. See the [developer guide](../../../../docs/DEVELOPERS.md#container-build-pipeline)
+for the base-image and deployment workflow, and the
+[usage guide](../../../../docs/USAGE.md#using-meshtastic-and-radio-setup)
+for the browser connection steps.
 
 ## Build and run on the Pi
 
-Run these commands from this `containers/meshtastic` directory:
+For manual startup, identify the radio using `ls -l /dev/serial/by-id/` and set
+`MESHTASTIC_DEVICE` to its full host path. On the tested Library Pi, the TBEAM
+was `/dev/serial/by-id/usb-1a86_USB_Single_Serial_573C000510-if00`; the u-blox
+receiver was GPS. Do not choose a port just because it is `ttyACM0`.
+Run these commands from this `containers/meshtastic` directory after meshflash
+has finished and stopped:
 
 ```bash
 sudo podman build -t localhost/meshtastic:latest -f Containerfile .
 sudo install -d -m 700 /Library/meshtastic
 sudo podman run -d --name meshtastic --restart unless-stopped \
-  --device '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0:/dev/meshtastic:rwm' \
+  --device "${MESHTASTIC_DEVICE:?Set the radio by-id path}:/dev/meshtastic:rwm" \
   -p 8086:8086 \
   -v /Library/meshtastic:/var/lib/meshtastic:Z \
   localhost/meshtastic:latest
@@ -135,17 +122,16 @@ sudo podman build --build-arg BASE_IMAGE=docker.io/library/debian:trixie-slim \
 ```
 
 The build uses the Pi's native architecture. The official web release is pinned
-and checksum-verified; the Meshtastic Python package is pinned to `2.7.11`, and
-`esptool` to `5.4.0`. The bundled Heltec firmware bundle is pinned by version and
-SHA-256. Building requires internet access. Web assets are served locally afterward;
+and checksum-verified; the Meshtastic Python package is pinned to `2.7.11`.
+Building requires internet access. Web assets are served locally afterward;
 the official client's online map tiles and other online services still require
 internet access. The existing `../build_pods.sh` and tar-export scripts discover
 this container automatically.
 
 Alternatively, after creating `/Library/meshtastic`, use `sudo podman compose up
 -d --build` with the supplied `compose.yaml` (requires a Compose provider).
-Compose accepts `BASE_IMAGE`, `MESHTASTIC_DEVICE`, `MESHTASTIC_DIR`, and
-`DISCOVERY_SECONDS` environment overrides.
+Compose requires `MESHTASTIC_DEVICE` and accepts `BASE_IMAGE`, `MESHTASTIC_DIR`,
+and `DISCOVERY_SECONDS` environment overrides.
 
 ## Open the web client
 
@@ -200,7 +186,6 @@ The host directory contains:
 | `state.json` | Chosen name and the radio identity it belongs to |
 | `config.yaml` | Official CLI-compatible configuration backup from the most recent successful initialization |
 | `nodes.json` | Node database snapshot used during that initialization |
-| `flash.json` | Record of an automatic firmware install (version, board, chip, timestamp), when one occurred |
 
 Files are written atomically with mode `0600`, outside the nginx web root. The
 configuration backup contains channel keys and may contain a device private
@@ -218,7 +203,7 @@ To explicitly restore a saved backup (with the normal container stopped):
 ```bash
 sudo podman stop meshtastic
 sudo podman run --rm \
-  --device '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0:/dev/meshtastic:rwm' \
+  --device "${MESHTASTIC_DEVICE:?Set the radio by-id path}:/dev/meshtastic:rwm" \
   -v /Library/meshtastic:/var/lib/meshtastic:Z \
   --entrypoint meshtastic localhost/meshtastic:latest \
   --port /dev/meshtastic --configure /var/lib/meshtastic/config.yaml
@@ -228,30 +213,10 @@ sudo podman start meshtastic
 Use the same one-off CLI pattern with `--info` or `--nodes` to inspect the radio.
 Always stop the bridge first so two processes do not compete for its serial port.
 
-To **manually** reflash a radio whose flash you have confirmed is corrupt (the
-container never does this on its own — see
-[Errors do not trigger a reflash](#errors-do-not-trigger-a-reflash)), copy
-`config.yaml` elsewhere first, then run the bundled esptool against the stopped
-bridge. This erases all settings:
-
-```bash
-sudo podman stop meshtastic
-FW=/opt/meshtastic/firmware
-V=2.7.26.54e0d8d
-sudo podman run --rm \
-  --device '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0:/dev/meshtastic:rwm' \
-  --entrypoint python3 localhost/meshtastic:latest -m esptool --port /dev/meshtastic erase-flash
-for off_img in "0x0 firmware-heltec-wsl-v3-$V.factory.bin" \
-               "0x340000 mt-esp32s3-ota.bin" \
-               "0x670000 littlefs-heltec-wsl-v3-$V.bin"; do
-  set -- $off_img
-  sudo podman run --rm \
-    --device '/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0:/dev/meshtastic:rwm' \
-    --entrypoint python3 localhost/meshtastic:latest \
-    -m esptool --port /dev/meshtastic --baud 460800 write-flash "$1" "$FW/$2"
-done
-sudo podman start meshtastic
-```
+To install or recover firmware, stop the bridge and use
+[meshflash](../meshflash/README.md). Preserve your configuration backup before
+erasing a radio. The Meshtastic container cannot flash firmware, even if legacy
+`AUTO_FLASH` or `FIRMWARE_DIR` environment variables are still supplied.
 
 ## Operation and troubleshooting
 
@@ -261,16 +226,10 @@ This means the initial **USB device handshake** did not finish. It happens
 before the discovery timer or automatic naming; nearby mesh nodes are not
 required for the handshake. Increasing `DISCOVERY_SECONDS` cannot fix it.
 
-The CP2102 device path can exist while the stick still runs its factory program.
-On this Library stick, a serial boot inspection showed `WIFI Setup done` and
-`Scan start...`, matching the [Heltec factory test](https://github.com/HelTecAutomation/Heltec_ESP32/blob/master/examples/Factory_Test/Wireless_Shell_V3_FactoryTest/Wireless_Shell_V3_FactoryTest.ino),
-with no Meshtastic protocol responses. For a **Heltec Wireless Stick Lite V3**
-the container installs `firmware-heltec-wsl-v3` automatically after this failed
-handshake (see [Automatic firmware install](#automatic-firmware-install)); the
-logs show the erase/write steps and the retry. A different board is left alone
-and must be flashed with the [official web flasher](https://flasher.meshtastic.org/).
-Flashing replaces the board's existing firmware; it lives on the stick, so
-rebuilding the container does not reflash a working radio.
+A USB serial port can exist while the board runs a factory test program or
+another firmware. If the radio does not answer Meshtastic, use meshflash to
+select the correct board and install firmware. Handshake failures never trigger
+an erase or write in this container.
 
 If Meshtastic is already installed, check that no other process holds the USB
 port (`sudo fuser -v /dev/ttyUSB0`) and that **Serial Console** is enabled in the
@@ -289,8 +248,8 @@ second client. An unset LoRa region affects radio traffic, not the USB handshake
   changed; recreate it if the by-id path changed.
 - If the maps container also runs, set **its `GPS_PORT` to its actual GPS
   receiver's by-id path**. Its default GPS auto-detection can otherwise claim a
-  lone generic serial device such as this CP2102. Stop that reader before using
-  the Heltec. No `--privileged` or whole `/dev` mount is needed here.
+  lone generic USB serial adapter. Stop that reader before using the radio.
+  No `--privileged` or whole `/dev` mount is needed for the bridge itself.
 - `DISCOVERY_SECONDS=120` gives the radio more time to hear nearby node names.
   Discovery is passive; quiet/offline nodes might not announce themselves.
 
@@ -301,6 +260,15 @@ python3 -m venv /tmp/meshtastic-tests
 /tmp/meshtastic-tests/bin/pip install 'meshtastic[cli]==2.7.11'
 /tmp/meshtastic-tests/bin/python -m unittest discover -s tests -v
 bash -n entrypoint.sh
+```
+
+The discovery tests include a simulated serial device speaking the Meshtastic
+protocol. To exercise both startup branches with Ansible and fake Podman
+commands, run from the repository root:
+
+```sh
+python3 -m unittest discover -s setup_library/tests -v
+ansible-playbook --syntax-check setup_library/files/start_library.yml
 ```
 
 ## Upstream references

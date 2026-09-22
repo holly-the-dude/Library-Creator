@@ -12,17 +12,18 @@ calibre-web/
 
 ## Building the Container
 
-Build with the default base image (rasbase_trixie - Debian 13 trixie, arm64):
+Build with the default `localhost/rasbase_master:latest` base (Debian 13 Trixie,
+ARM64). Use the appliance's rootful Podman image store:
 
 ```bash
-podman build -t localhost/calibre-web:latest .
+sudo podman build -t localhost/calibre-web:latest -f Containerfile .
 ```
 
-Build with a different base image:
-
-```bash
-podman build --build-arg BASE_IMAGE=localhost/rasbase:latest -t localhost/calibre-web:latest .
-```
+The parent [`build_pods.sh`](../build_pods.sh) builds this image along with the
+other Library services, including both radio images. See the
+[build and export workflow](../../../../docs/DEVELOPERS.md#container-build-pipeline)
+for preparing the base image and offline tar files. Run the Podman commands below
+as root, or prefix them with `sudo`.
 
 ## Running the Container
 
@@ -88,7 +89,9 @@ This runs `calibredb` to import books from the `/incoming` directory into the Ca
 
 ## First-Time Setup
 
-On first run, Calibre-Web will ask for the library path — enter `/books`. The default login credentials are:
+The image preconfigures the library path as `/books` and enables anonymous browsing.
+Mount a Calibre library containing `metadata.db` there. If prompted for the library
+path after changing configuration, enter `/books`. The default admin credentials are:
 
 - **Username**: admin
 - **Password**: admin123

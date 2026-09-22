@@ -1,0 +1,50 @@
+# Offline Meshtastic TUI, available through a browser or SSH on the Pi.
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+LABEL description="Library Meshtastic offline TUI and web terminal"
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates curl python3 python3-venv dialog tmux && \
+    rm -rf /var/lib/apt/lists/*
+
+# Trixie does not provide ttyd in this base's repositories. Official static
+# releases include the terminal frontend, so no Node/npm/CDN is needed.
+RUN case "$(dpkg --print-architecture)" in \
+        arm64) ttyd_arch=aarch64; ttyd_sha=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165 ;; \
+        armhf) ttyd_arch=armhf; ttyd_sha=8240c8438b68d3b10b0e1a4e7c914d70fca6a7606b516f40bf40adfa1044d801 ;; \
+        amd64) ttyd_arch=x86_64; ttyd_sha=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55 ;; \
+        *) echo 'Unsupported ttyd architecture' >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL --retry 5 "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${ttyd_arch}" \
+        -o /usr/local/bin/ttyd && \
+    echo "${ttyd_sha}  /usr/local/bin/ttyd" | sha256sum -c - && \
+    chmod +x /usr/local/bin/ttyd
+
+ARG ESPTOOL_VERSION=5.4.0
+ARG MESHTASTIC_VERSION=2.7.11
+RUN python3 -m venv /opt/meshflash-venv && \
+    /opt/meshflash-venv/bin/pip install --no-cache-dir \
+        "esptool==${ESPTOOL_VERSION}" "meshtastic[cli]==${MESHTASTIC_VERSION}"
+# /host-dev must be supplied at runtime with the host /dev bind mount and USB
+# serial cgroup rules; see README.md / compose.yaml. An image cannot grant this.
+ENV PATH="/opt/meshflash-venv/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    TERM=xterm-256color FIRMWARE_DIR=/opt/meshflash/firmware \
+    SERIAL_ROOT=/host-dev FLASH_BAUD=115200 PORT=8086
+
+COPY flasher.py prepare-offline.py /opt/meshflash/
+# Downloads happen only here. An optional comma-separated board list saves space.
+ARG FIRMWARE_STABLE_COUNT=1
+ARG FIRMWARE_ALPHA_COUNT=1
+ARG FIRMWARE_BOARDS=
+RUN python3 /opt/meshflash/prepare-offline.py /opt/meshflash/firmware \
+        --stable-count "${FIRMWARE_STABLE_COUNT}" \
+        --alpha-count "${FIRMWARE_ALPHA_COUNT}" --boards "${FIRMWARE_BOARDS}"
+
+COPY entrypoint.sh /usr/local/bin/start-meshflash
+COPY meshflash.sh /usr/local/bin/meshflash
+COPY tmux.conf /opt/meshflash/tmux.conf
+RUN chmod +x /usr/local/bin/start-meshflash /usr/local/bin/meshflash
+EXPOSE 8086
+ENTRYPOINT ["/usr/local/bin/start-meshflash"]

@@ -260,166 +260,33 @@ class PtyWorkerIntegrationTests(unittest.TestCase):
             os.close(slave)
 
 
-class AutoFlashIntegrationTests(unittest.TestCase):
-    def setUp(self):
+class BootstrapFailureTests(unittest.TestCase):
+    def test_repeated_failure_preserves_backups_and_only_retries_bootstrap(self):
         import tempfile
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.data_dir = Path(self.tmp.name)
-        # flash_probe_after=1 lets a single failure trigger the probe in tests
-        # that specifically exercise flashing; the threshold has its own test.
-        self.radio = bridge.RadioBridge("/dev/fake", self.data_dir, 0,
-                                        firmware_dir="/fw", auto_flash=True,
-                                        flash_probe_after=1)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("state.json", "config.yaml", "nodes.json", "flash.json"):
+                (root / name).write_text("preserve-me")
+            radio = bridge.RadioBridge("/dev/fake", root, 0)
+            attempts = 0
 
-    def test_handshake_success_returns_metadata_and_keeps_guard_armed(self):
-        with mock.patch.object(bridge, "bootstrap_radio",
-                               return_value={"long_name": "library0001"}) as boot, \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            result = self.radio._bootstrap_with_autoflash()
-        self.assertEqual(result["long_name"], "library0001")
-        auto.assert_not_called()
-        self.assertFalse(self.radio._flash_attempted)
-        self.assertEqual(self.radio._consecutive_failures, 0)
-        boot.assert_called_once()
+            def failed_bootstrap(*args):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 6:
+                    radio.stop.set()
+                raise RuntimeError("Timed out")
 
-    def test_handshake_failure_triggers_flash_then_retries_handshake(self):
-        boot = mock.Mock(side_effect=[RuntimeError("Timed out"),
-                                      {"long_name": "library0002"}])
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash", return_value=True) as auto:
-            result = self.radio._bootstrap_with_autoflash()
-        self.assertEqual(result["long_name"], "library0002")
-        auto.assert_called_once_with("/dev/fake", "/fw", self.radio.data_dir, True)
-        self.assertEqual(boot.call_count, 2)
-        # A confirmed handshake re-arms the one-shot guard for future replacements.
-        self.assertFalse(self.radio._flash_attempted)
-        self.assertEqual(self.radio._consecutive_failures, 0)
-
-    def test_no_flashable_board_reraises_and_does_not_retry(self):
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash", return_value=False):
-            with self.assertRaisesRegex(RuntimeError, "Timed out"):
-                self.radio._bootstrap_with_autoflash()
-        self.assertEqual(boot.call_count, 1)
-        self.assertTrue(self.radio._flash_attempted)
-
-    def test_flash_attempted_once_until_a_working_handshake(self):
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash", return_value=False) as auto:
-            with self.assertRaises(RuntimeError):
-                self.radio._bootstrap_with_autoflash()
-            # Second cycle must not probe/flash again after a single attempt.
-            with self.assertRaises(RuntimeError):
-                self.radio._bootstrap_with_autoflash()
-        auto.assert_called_once()
-
-    def test_disabled_auto_flash_never_probes(self):
-        self.radio.auto_flash = False
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            with self.assertRaises(RuntimeError):
-                self.radio._bootstrap_with_autoflash()
-        auto.assert_not_called()
-
-    def test_known_good_radio_from_state_json_is_never_probed(self):
-        # A prior successful init wrote state.json: a timeout now is transient.
-        (self.data_dir / "state.json").write_text("{}")
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            with self.assertRaisesRegex(RuntimeError, "Timed out"):
-                self.radio._bootstrap_with_autoflash()
-        auto.assert_not_called()
-        self.assertFalse(self.radio._flash_attempted)
-
-    def test_known_good_radio_from_flash_json_is_never_probed(self):
-        (self.data_dir / "flash.json").write_text("{}")
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            with self.assertRaises(RuntimeError):
-                self.radio._bootstrap_with_autoflash()
-        auto.assert_not_called()
-
-    def test_first_seen_board_is_not_probed_until_threshold_reached(self):
-        self.radio.flash_probe_after = 3
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "auto_flash", return_value=False) as auto:
-            for _ in range(2):
-                with self.assertRaises(RuntimeError):
-                    self.radio._bootstrap_with_autoflash()
-            auto.assert_not_called()  # first two failures must not probe/reset
-            with self.assertRaises(RuntimeError):
-                self.radio._bootstrap_with_autoflash()  # third failure probes
-            auto.assert_called_once()
-
-    def test_known_good_not_probed_below_reprovision_threshold(self):
-        # reprovision_after = max(fp, fp*4). With flash_probe_after=1 -> 4.
-        (self.data_dir / "state.json").write_text("{}")
-        self.assertEqual(self.radio.reprovision_after, 4)
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "app_is_blank") as blank, \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            for _ in range(3):  # below the threshold of 4
-                with self.assertRaises(RuntimeError):
-                    self.radio._bootstrap_with_autoflash()
-        blank.assert_not_called()  # never even probe a known-good radio yet
-        auto.assert_not_called()
-
-    def test_known_good_blank_board_is_reprovisioned_and_record_cleared(self):
-        (self.data_dir / "state.json").write_text("{}")
-        (self.data_dir / "flash.json").write_text("{}")
-        (self.data_dir / "config.yaml").write_text("x")
-        # bootstrap_radio times out until a flash happens, then succeeds. Track
-        # flashing via a mutable flag so ordering of internal calls cannot break
-        # the test regardless of how many probe cycles run.
-        state = {"flashed": False}
-
-        def fake_bootstrap(*_a, **_k):
-            if state["flashed"]:
-                return {"long_name": "library0001"}
-            raise RuntimeError("Timed out")
-
-        def fake_flash(*_a, **_k):
-            state["flashed"] = True
-            return True
-
-        with mock.patch.object(bridge, "bootstrap_radio", side_effect=fake_bootstrap), \
-                mock.patch.object(bridge.flash, "app_is_blank", return_value=True) as blank, \
-                mock.patch.object(bridge.flash, "auto_flash", side_effect=fake_flash) as auto:
-            for _ in range(3):  # below threshold: just retries, no probe
-                with self.assertRaises(RuntimeError):
-                    self.radio._bootstrap_with_autoflash()
-            blank.assert_not_called()
-            # 4th failure reaches reprovision_after: probe -> blank -> flash -> retry
-            result = self.radio._bootstrap_with_autoflash()
-        self.assertEqual(result["long_name"], "library0001")
-        blank.assert_called_once_with("/dev/fake")
-        auto.assert_called_once()
-        # The stale record must have been cleared before flashing.
-        self.assertFalse((self.data_dir / "state.json").exists())
-        self.assertFalse((self.data_dir / "flash.json").exists())
-        self.assertFalse((self.data_dir / "config.yaml").exists())
-
-    def test_known_good_nonblank_board_is_left_untouched(self):
-        (self.data_dir / "state.json").write_text("{}")
-        boot = mock.Mock(side_effect=RuntimeError("Timed out"))
-        with mock.patch.object(bridge, "bootstrap_radio", boot), \
-                mock.patch.object(bridge.flash, "app_is_blank", return_value=False) as blank, \
-                mock.patch.object(bridge.flash, "auto_flash") as auto:
-            for _ in range(6):  # well past the reprovision threshold
-                with self.assertRaises(RuntimeError):
-                    self.radio._bootstrap_with_autoflash()
-        # Probed at most once (one-shot), never flashed, record intact.
-        blank.assert_called_once()
-        auto.assert_not_called()
-        self.assertTrue((self.data_dir / "state.json").exists())
+            with mock.patch.object(bridge, "bootstrap_radio", side_effect=failed_bootstrap), \
+                    mock.patch.object(radio.stop, "wait"), \
+                    mock.patch.object(bridge, "open_serial") as opened:
+                radio.run()
+            self.assertEqual(attempts, 6)
+            opened.assert_not_called()
+            self.assertFalse(radio.status()["ready"])
+            self.assertIn("Timed out", radio.status()["error"])
+            for path in root.iterdir():
+                self.assertEqual(path.read_text(), "preserve-me")
 
 
 if __name__ == "__main__":

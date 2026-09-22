@@ -82,15 +82,25 @@ port is only a candidate until checksum-valid GPS sentences arrive. If several p
 are possible, diagnostics list them instead of guessing. The default baud is 9600;
 override with `-e GPS_BAUD=4800`, or set it in compose's `.env`.
 
-On this appliance `GPS_PORT` is **pinned** to the u-blox receiver's persistent by-id
-path (`rebuild.sh`, `compose.yaml`, and `.env.example` default it), rather than left
-empty for auto-detection. The Meshtastic container exposes a generic **CP2102** serial
-device; with an empty `GPS_PORT`, discovery would claim that radio and fight its bridge
-for the port, and neither service would work. An explicit `GPS_PORT` makes the reader
-open only that path and never probe the CP2102. Override for a different receiver with
-`-e GPS_PORT=/dev/serial/by-id/your-receiver -e GPS_BAUD=4800`, or set it empty only on
-a maps-only host with a single receiver. The playbook accepts
-`-e gps_port=/dev/serial/by-id/your-receiver -e gps_baud=4800`.
+The runtime playbook defaults `gps_port` to empty (automatic detection). Its
+Meshtastic probe skips GPS-labelled devices and the explicitly configured
+`gps_port`. A generic radio adapter can still look like a GPS candidate to the
+maps reader, so pin the receiver on a Pi with both devices:
+
+```bash
+sudo ansible-playbook /root/start_library.yml \
+  -e gps_port=/dev/serial/by-id/your-gps-receiver -e gps_baud=9600
+```
+
+Use the receiver's real by-id path and save it in the deployed playbook's variables
+for subsequent boots; a command-line override affects only that run. Radio adapters
+may appear as either `ttyUSB` or `ttyACM`; neither name proves a device is a GPS.
+
+The standalone `rebuild.sh`, `compose.yaml` and `.env.example` instead default to a
+specific u-blox receiver's by-id path. Override `GPS_PORT` for your receiver. The
+Compose expression uses a fallback for both unset and empty values, so an empty
+`.env` value does **not** enable automatic detection without editing that expression.
+Stop other serial readers before testing the same device directly.
 
 Give the receiver a clear view of the sky. GGA or RMC output is required for location;
 GGA reports satellites used and GSV reports satellites in view. Binary-only receivers
@@ -208,7 +218,7 @@ The `build_state_pmtiles.sh` script can generate PMTiles from Geofabrik OSM extr
 
 ## Container Details
 
-- **Base image**: `localhost/rasbase_trixie` (Debian 13 trixie, arm64)
+- **Base image**: `localhost/rasbase_master:latest` (Debian 13 trixie, arm64)
 - **Web server**: nginx on port 8080
 - **GPS reader**: Python + pySerial, loopback status API on port 8765
 - **PMTiles CLI**: go-pmtiles 1.30.2 at `/usr/local/bin/pmtiles`
@@ -222,3 +232,11 @@ The `build_state_pmtiles.sh` script can generate PMTiles from Geofabrik OSM extr
 - The `.pmtiles` tile data itself is served entirely offline from the local volume
 - Files use the naming convention `statename_2025-12.pmtiles`
 - On systems where `curl` prefers IPv6, use `127.0.0.1` instead of `localhost` to access the container
+
+## Shared build workflow
+
+The parent [`build_pods.sh`](../build_pods.sh) builds the maps image and its nested
+GraphHopper image alongside the other services, including Meshtastic and meshflash.
+Use rootful Podman consistently for appliance builds and startup. See the
+[developer guide](../../../../docs/DEVELOPERS.md#container-build-pipeline) for exports;
+the top-level tar-export loop does not include the nested GraphHopper image.
