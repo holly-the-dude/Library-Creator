@@ -92,7 +92,7 @@ The build script requires both radio Containerfiles and builds each as
 full build during maintenance, after any flash finishes, because it removes old
 images before rebuilding. See the [developer guide](../../../../docs/DEVELOPERS.md#container-build-pipeline)
 for the base-image and deployment workflow, and the
-[usage guide](../../../../docs/USAGE.md#using-meshtastic-and-radio-setup)
+[usage guide](../../../../docs/USAGE.md#meshtastic-communications)
 for the browser connection steps.
 
 ## Build and run on the Pi
@@ -135,9 +135,17 @@ and `DISCOVERY_SECONDS` environment overrides.
 
 ## Open the web client
 
+For everyday messaging, node lists and troubleshooting, use
+[Meshtastic Communications in the Usage Guide](../../../../docs/USAGE.md#meshtastic-communications).
+The steps below cover the Library-specific HTTP connection.
+
 1. Open **http://library:8086** (or `http://<Pi-IP>:8086`).
 2. Allow the initial configuration download and 60-second discovery period to
-   complete. Check `http://library:8086/bridge/status` for `"ready": true`.
+   complete. First startup can take a hot minute: the discovery period is in
+   addition to connection time. Check
+   [bridge status](http://10.1.1.1:8086/bridge/status) for `"ready": true`.
+   Refresh to update; if `ready` is false, the `error` field explains whether
+   the bridge is waiting for initialization or encountered a connection error.
 3. Add an **HTTP** connection. Set the address to **`library:8086`** (or the same
    `<Pi-IP>:8086` used in the browser) and disable TLS/HTTPS for this connection.
 4. Use the client to view nodes, send messages, and configure the radio.

@@ -20,6 +20,8 @@ When installation finishes, the Raspberry Pi will:
 - Offer Wikipedia, a music player, an e-book reader, and offline maps with turn-by-turn
   driving directions - all offline.
 - Show status messages on an attached TFT screen (or HDMI monitor) while it boots.
+- Offer **Meshtastic Communications** at `http://library:8086`: the radio client when a USB radio answers,
+  or the firmware setup terminal when no Meshtastic radio answers.
 
 ---
 
@@ -34,6 +36,8 @@ When installation finishes, the Raspberry Pi will:
 | USB drive | Holds the library content (Wikipedia, music, books, maps). Larger is better - content can ginormous |
 | Display | A 3.5" TFT, 2.4" TFT, or an HDMI monitor. The display is optional but recommended for seeing boot status |
 | Power supply | The official supply for your Pi model |
+| Meshtastic radio (optional) | USB radio, matching antenna and data cable; ESP32 required for the bundled firmware flasher |
+| GPS receiver (optional) | USB NMEA receiver for maps; this is a separate device from the Meshtastic radio |
 
 ### Software
 
@@ -151,9 +155,50 @@ You can also check status directly on the Pi:
 # choose 4) System Status
 ```
 
-A healthy install shows First / Second / Third Boot all `COMPLETE`.
+The status screen reports stage flags as `COMPLETE`. These flags alone do not
+prove every task succeeded; check the installation logs if services are missing.
 
 ---
+
+## Set up the Meshtastic radio
+
+For messaging after setup, follow [Meshtastic Communications](USAGE.md#meshtastic-communications).
+Prepare a second reachable radio for an exchange of test messages. Set the LoRa
+region for the installation location and match your group's radio/channel settings.
+The bridge preserves an already-configured region; for an unset radio it applies
+`LORA_REGION` (default `US`). Configure that default before first provisioning an
+appliance elsewhere; see the [radio defaults](../setup_library/files/containers/meshtastic/README.md#hardware-and-firmware).
+
+Both radio images and their launchers use port 8086. When updating an existing
+installation, rebuild the image, deploy the updated playbook and recreate the
+container; see [flasher upgrades](../setup_library/files/containers/meshflash/README.md#port-configuration-and-upgrades).
+
+1. Plug the radio into the **Pi** with a data-capable USB cable and attach its antenna.
+2. Open `http://library:8086` (or `http://10.1.1.1:8086`). A radio already running
+   Meshtastic opens the web client; choose an **HTTP** connection to `library:8086`.
+3. If the setup terminal appears, select the radio's serial port, exact board model,
+   firmware version, and operation. Erase & install removes the radio's settings and keys.
+4. Wait for completion and let the radio reboot. Reboot the Pi, or run as root over SSH:
+
+   ```sh
+   ansible-playbook /root/start_library.yml --tags mesh
+   ```
+
+The check stops both radio containers, probes again, and starts the selected service.
+Do not run it while a flash is in progress. Selection happens at startup or on this
+command, not continuously while the browser is open. No responding radio also offers
+setup when no radio is attached; the firmware menu cannot flash until one is connected.
+
+The device menu can include a GPS receiver. Check `ls -l /dev/serial/by-id/` on the Pi;
+port numbers can change. With multiple responding radios, select one explicitly using
+`-e meshtastic_device=/dev/serial/by-id/your-radio` on the startup command.
+
+Both `localhost/meshtastic:latest` and `localhost/meshflash:latest` must be built or
+loaded locally. The installer calls `build_pods.sh`, which requires both build folders.
+The flasher bundles firmware while online; no internet is needed for bundled releases.
+See the [Meshtastic README](../setup_library/files/containers/meshtastic/README.md) and
+[meshflash README](../setup_library/files/containers/meshflash/README.md) for device
+mappings, supported firmware, SSH access, and upgrades from older images.
 
 ## Adding map content (tiles + routing)
 
@@ -245,7 +290,13 @@ longer than 5 minutes, auto-resume won't fire - just run `./bootstrap` and pick
 Read `less /root/installplay.log` to find the failing task. Then use
 `5) Advanced Options → Reset all boot flags` and retry from a fresh install.
 
-**The USB wasn't detected.**
+**Port 8086 shows firmware setup even though a radio is connected.**
+The radio did not complete a Meshtastic handshake. Check its USB cable, firmware,
+and whether another serial client has the port open. A recognized ESP chip or USB
+adapter is not proof that Meshtastic is running. The bridge never installs firmware
+automatically. See the radio READMEs linked above.
+
+**The USB storage wasn't detected.**
 The device must be labeled `Library_USB` and formatted exFAT. A fresh install handles
 this for you; if you're mounting an existing drive, confirm the label with
 `lsblk -o NAME,FSTYPE,LABEL`.

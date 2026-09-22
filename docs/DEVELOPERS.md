@@ -21,8 +21,18 @@ Everything is orchestrated from a single interactive installer script, `bootstra
 by Ansible playbooks and a set of Podman container definitions.
 
 ---
-## Future work
-- LoRa Text messaging with other Libraries or Meshtastic or both
+
+## Meshtastic Communications
+
+Meshtastic messaging is available through a USB radio connected to the Pi. The
+browser uses HTTP to reach the bridge; the bridge owns the radio's serial connection.
+Use one active web client at a time. The startup playbook selects either the radio
+client or the firmware setup terminal on port 8086.
+
+See [Meshtastic Communications in the Usage Guide](USAGE.md#meshtastic-communications)
+for connecting and sending messages, and [radio service selection](#radio-service-selection)
+for discovery, port mapping and deployment.
+
 ---
 
 ## Architecture overview
@@ -73,8 +83,10 @@ by Ansible playbooks and a set of Podman container definitions.
 | Wiki (Kiwix) | 10.88.0.200 | 6902 | `http://10.1.1.1:6902` |
 | Music (LMS) | 10.88.0.210 | 5082 | `http://10.1.1.1:9099` |
 | eBooks (Calibre-Web) | 10.88.0.211 | 8083 | `http://10.1.1.1:8083` |
-| Maps (PMTiles + MapLibre) | — | 8080 | `http://10.1.1.1:8080` |
+| Maps (PMTiles + MapLibre) | 10.88.0.212 | 8080 | `http://10.1.1.1:8080` |
 | Maps routing (GraphHopper) | 10.88.0.213 | 8989 | internal, via maps `/api/route` |
+| Meshtastic bridge | 10.88.0.214 | 8086 | `http://library:8086` |
+| meshflash setup (alternative to bridge) | 10.88.0.214 | 8086 | `http://library:8086` |
 | Shutdown endpoint | — | 9999 | internal |
 
 ---
@@ -96,6 +108,7 @@ Library-Creator/
     ├── 03_start_containers.yml  # Start display/hotspot/wiki/music/webserver, report status
     ├── 99_reinstall_pods.yml    # Refresh/reload container images
     └── files/
+        ├── start_library.yml    # Runtime orchestration; --tags mesh selects radio services
         ├── Library_USB.tar      # Base content skeleton unpacked onto the USB
         ├── 87-podman-bridge.conflist  # Podman network (static 10.88.0.x IPs)
         └── containers/
@@ -103,12 +116,14 @@ Library-Creator/
             ├── create_tar_pods.sh   # Save built images to <name>.tar
             ├── reconstitute.sh      # Reassemble rasbase.tar from split parts, load it
             ├── update_rasbase.sh    # Upgrade the rasbase base image release-by-release
-            ├── rasbase00..06        # Split parts of the base image tarball
+            ├── rasbase_parts/       # Split parts of the base image tarball
             ├── hotspot/             # WiFi AP (hostapd + dnsmasq)
             ├── webserver/           # nginx hub + library.py service monitor
             ├── wiki/                # Kiwix server
             ├── music/               # LMS music server
             ├── calibre-web/         # Calibre-Web e-book reader
+            ├── meshtastic/          # USB protocol discovery, HTTP bridge; no firmware flashing
+            ├── meshflash/           # Offline firmware TUI via ttyd + persistent tmux
             └── library_maps/        # PMTiles map viewer (nginx) + MapLibre
                 └── graphhopper/     # Optional car-routing engine (built as
                                      #   library_maps-graphhopper:11)
@@ -121,16 +136,16 @@ authoritative reference for each service.
 
 ## The base image: `rasbase`
 
-All the service containers build `FROM` a shared base image called **`rasbase`** — an
-arm64 Raspberry Pi OS / Debian userland. Because a full base image is large, it's stored
-in git as **split parts** (`rasbase00` … `rasbase06`) and reassembled at build time.
+Most service containers default to **`localhost/rasbase_master:latest`**, the updated
+ARM64 Debian userland. Music uses `docker.io/epoupon/lms:latest`; GraphHopper has its
+own Containerfile. The older **rasbase** archive is stored as split parts under
+`containers/rasbase_parts/` and reconstructed before the base upgrade.
 
 - **`reconstitute.sh`** — concatenates the split parts back into `rasbase.tar` and loads
   it into Podman:
 
   ```bash
-  cat rasbase?? >> rasbase.tar
-  podman load -i rasbase.tar
+  bash reconstitute.sh
   ```
 
 - **`update_rasbase.sh`** — upgrades the base image to the newest **stable** Debian
@@ -140,9 +155,9 @@ in git as **split parts** (`rasbase00` … `rasbase06`) and reassembled at build
   flattens the layers into one to reclaim space and verifies the resulting codename.
   It's safe to run repeatedly.
 
-Some containers (e.g. `calibre-web`, `library_maps`) build `FROM localhost/rasbase_master`
-for newer packages; others build `FROM localhost/rasbase`. Most accept a
-`--build-arg BASE_IMAGE=...` override — see each container's README.
+The hotspot, webserver, wiki, calibre-web, maps, Meshtastic and meshflash images
+use `rasbase_master` by default. Their `BASE_IMAGE` build argument can select a
+compatible alternative; check each Containerfile and service README.
 
 ---
 
@@ -155,27 +170,39 @@ containers by scanning for subdirectories that contain a `Containerfile` (or `Do
 
    ```bash
    cd setup_library/files/containers
-   ./build_pods.sh
+   sudo ./build_pods.sh
    ```
+
+   Images are tagged `localhost/<folder>:latest`, including **meshtastic** and
+   **meshflash**. Both radio Containerfiles must exist or the script exits before
+   removing images. Each is built once, using its explicit Containerfile path.
+   Build failures are summarized and return a nonzero exit status.
+
+   The script uses `podman rmi --force` before rebuilding. Run it during maintenance,
+   never during a radio flash. Use the same rootful Podman image store for building,
+   exporting, loading and appliance startup.
 
    It also builds nested routing subimages: any `*/graphhopper/Containerfile` is built as
    `<parent>-graphhopper:11` (e.g. `library_maps/graphhopper` → `library_maps-graphhopper:11`).
 
 2. **`create_tar_pods.sh`** — saves each built image to `<name>.tar` for offline
-   deployment (the finished device loads these tarballs rather than building on the Pi):
+   deployment or transfer to another Pi (the installer can also build on the Pi):
 
    ```bash
-   ./create_tar_pods.sh
+   sudo ./create_tar_pods.sh
    ```
+
+The export loop includes `meshtastic.tar` and `meshflash.tar`. Nested GraphHopper
+images are built by `build_pods.sh`, but are not exported by that loop; save
+`localhost/library_maps-graphhopper:11` separately when packaging routing.
+Meshflash firmware is part of its image, so exporting preserves its offline snapshot.
 
 Supporting scripts: `load.sh` (load saved tars) and `cp_pod_tars.sh` (copy tars into
 place). To build a single container by hand:
 
 ```bash
 cd setup_library/files/containers/webserver
-podman build -t localhost/webserver:latest .
-# optionally target the newer base:
-podman build --build-arg BASE_IMAGE=localhost/rasbase_master:latest -t localhost/webserver:latest .
+sudo podman build -t localhost/webserver:latest -f Containerfile .
 ```
 
 ---
@@ -193,21 +220,21 @@ automatically within 5 minutes of boot. Progress is tracked with flag files in `
 | **Second Boot** | Show "configuring" splash, run `01_install_ansible.yml` (SSH keys, Podman network, systemd services, display splash services, WiFi, touch input, load container images), verify `shutdown_library.service` | `01_install_ansible.yml` |
 | **Third Boot** | Remove resume cron, show "ready" splash, clean up temporary network config, final reboot into production | `bootstrap` `do_third_boot` |
 
-At runtime, `start_library.service` runs `start_library.yml`, which effectively performs
-the steps in `03_start_containers.yml`: start the display container, hotspot, then wiki,
-music, and webserver — each conditional on its content existing under `/Library`, and each
-reporting status to the on-device display via the display container's
-`http://127.0.0.1:6901/upload-text` endpoint.
+At runtime, `start_library.service` runs `/root/start_library.yml`, copied from
+`setup_library/files/start_library.yml`. This is the current orchestration playbook;
+`03_start_containers.yml` is an older separate startup path. The runtime playbook
+handles storage, cloning, hotspot, content services, maps/GPS, and radio service
+selection. It reports progress with the host's `displayit` splash helper.
 
 For the complete menu-by-menu and stage-by-stage reference, see
 [`bootstrap.md`](../bootstrap.md).
 
 ### Display abstraction
 
-The on-screen status messages come from a small "update_display" container that exposes an
-HTTP endpoint (`:6901/upload-text`). Ansible tasks POST HTML snippets to it (colored text
-in a bordered box). Full-screen splash images are shown via the `displayit <name>.jpg`
-helper on the host. TFT panels are driven through goodtft LCD-show; HDMI uses the KMS
+The [`update_display` role](../setup_library/roles/update_display/README.md) POSTs
+HTML snippets to an existing display HTTP service (`:6901/upload-text`). It does
+not deploy that service. Current runtime startup shows full-screen splash images
+using the `displayit <name>.jpg` helper on the host. TFT panels are driven through goodtft LCD-show; HDMI uses the KMS
 driver (auto-scaling from the monitor's EDID, with an optional forced mode via
 `LIBRARY_HDMI_RES`).
 
@@ -215,7 +242,8 @@ driver (auto-scaling from the monitor's EDID, with an optional forced mode via
 
 ## Content layout on the USB (`/Library`)
 
-Services activate only when their content is present. Expected paths:
+Content services activate when their content is present. Radio service selection
+runs independently of content folders. Expected paths:
 
 | Path | Used by | Notes |
 |------|---------|-------|
@@ -229,9 +257,10 @@ Services activate only when their content is present. Expected paths:
 | `/Library/maps/basemaps-assets/` | Maps | Fonts (glyphs) + sprites for offline labels |
 | `/Library/maps/osm/region.osm.pbf` | Maps routing | OSM extract GraphHopper routes on. Absent = viewer only, no directions |
 | `/Library/maps/graph-cache/` | Maps routing | GraphHopper's built routing graph (rebuilt when the extract changes) |
+| `/Library/meshtastic/` | Meshtastic bridge | Private configuration backup, chosen node name and discovered node snapshot |
 
-If a path is missing, `03_start_containers.yml` posts a "missing content" message to the
-display instead of starting that service.
+If required content is missing, the relevant runtime startup block skips that
+content service. Missing radio firmware instead leads to the meshflash setup page.
 
 ### Maps routing internals
 
@@ -277,6 +306,61 @@ select a receiver/baud; defaults are automatic detection and 9600. Compose devic
 access is opt-in through `compose.gps.yaml`. The entrypoint supervises both nginx and
 the GPS service and forwards shutdown signals to them. No GPS is required for maps
 to start normally.
+
+### Radio service selection
+
+The `mesh`-tagged block in `start_library.yml` requires both radio images locally.
+It stops `meshtastic` and `meshflash` to release the serial port and host port 8086,
+then runs `/opt/meshtastic/discover.py` in a temporary, network-disabled container.
+Discovery enumerates USB serial ports, excludes identifiable GPS devices and the
+configured `gps_port`, and requires a completed Meshtastic handshake. It prefers
+by-id paths for the resulting device mapping. Esptool chip detection alone cannot
+establish that a radio runs Meshtastic; the host's esptool is not used for this check.
+
+| Discovery result | Startup action |
+| --- | --- |
+| One responding radio | Map that device to `/dev/meshtastic`; start meshtastic at `8086:8086` |
+| No responding radio | Start meshflash at `8086:8086`, with `/dev:/host-dev:ro` and character-device rules for majors 188 and 166 |
+| Multiple responding radios | Stop with an error; require an explicit `meshtastic_device` override |
+
+Both alternatives use `10.88.0.214`; they are mutually exclusive. The hub checks
+`http://10.1.1.1:8086/` for HTML so its Meshtastic link works with either service.
+The bridge contains no firmware or flashing code. Meshflash bundles checksummed
+ESP32 images at build time and requires user confirmation before writing them.
+
+The meshflash image and entrypoint default to port 8086. The startup playbook,
+Compose and `meshlocal.sh` all use `8086:8086`. Rebuild and recreate older
+containers with the updated launchers so their listening and published ports
+match; see [flasher upgrades](../setup_library/files/containers/meshflash/README.md#port-configuration-and-upgrades).
+
+After flashing finishes and the radio has rebooted, reboot the Pi or run:
+
+```sh
+sudo ansible-playbook /root/start_library.yml --tags mesh
+# Optional selection when several radios respond:
+sudo ansible-playbook /root/start_library.yml --tags mesh \
+  -e meshtastic_device=/dev/serial/by-id/your-radio
+```
+
+This reselects the service; it is not a background hotplug watcher. Do not run it
+during a flash. `meshtastic_probe_timeout` defaults to 12 seconds per candidate,
+plus up to five seconds for cleanup. A failed handshake never authorizes an erase.
+
+For an existing installation, rebuild/redeploy the Meshtastic image (which now
+contains `discover.py`), provide meshflash, redeploy the webserver image/config,
+and copy the updated playbook to `/root/start_library.yml`. Source edits alone do
+not update running containers. The service READMEs contain standalone run commands,
+USB diagnostics and SSH access to the flasher.
+
+Regression checks from the repository root (Ansible and the Meshtastic Python
+client must be installed in the selected environments):
+
+```sh
+ansible-playbook --syntax-check setup_library/files/start_library.yml
+python3 -m unittest discover -s setup_library/tests -v
+python3 -m unittest discover -s setup_library/files/containers/meshtastic/tests -v
+python3 -m unittest discover -s setup_library/files/containers/meshflash/tests -v
+```
 
 ### microSD self-cloning
 
@@ -331,7 +415,7 @@ Library card. It runs early in startup, **before** any services start.
    (name, display_name, internal_ip, internal_port, external_url, check_text, timeout).
    The `check_text` is a string `library.py` looks for in the service's HTTP response to
    decide whether to show its nav link.
-4. **Start it.** Add a start block to `03_start_containers.yml` (or `start_library.yml`),
+4. **Start it.** Add a start block to `setup_library/files/start_library.yml`,
    gated on the content existing under `/Library`, and post status to the display.
 5. **Package it.** Run `build_pods.sh` then `create_tar_pods.sh` so the image ships as a
    loadable tar. Update the `podman_images` list in `01_install_ansible.yml` /

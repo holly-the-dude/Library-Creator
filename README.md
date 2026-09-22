@@ -10,7 +10,8 @@
 Library-Creator turns a Raspberry Pi into a self-contained knowledge station: your own
 little library that fits in the palm of your hand (it doesn't *run* from your hand - that
 would just be dumb). It hosts its own WiFi network and serves Wikipedia, a music and
-audiobook server, an e-book reader, offline maps with turn-by-turn driving directions, and
+audiobook server, an e-book reader, offline maps with turn-by-turn driving directions,
+**Meshtastic Communications** for mesh messaging through a USB radio, and
 any files you can view in a browser (PDFs, images, videos, and more) - all with **no
 internet connection required**.
 
@@ -41,7 +42,7 @@ Pick the guide that matches what you're doing:
 
 | Guide | For you if you want to… |
 |-------|--------------------------|
-| <img src="docs/icons/png/usage.png" alt="" height="18" align="absmiddle"> **[Usage Guide](docs/USAGE.md)** | **Use** a Library device that's already running - connect, browse Wikipedia, play music, read books, view maps. No technical knowledge needed. |
+| <img src="docs/icons/png/usage.png" alt="" height="18" align="absmiddle"> **[Usage Guide](docs/USAGE.md)** | **Use** a Library device that's already running - connect, browse Wikipedia, play music, read books, view maps, and send Meshtastic messages. No technical knowledge needed. |
 | <img src="docs/icons/png/install.png" alt="" height="18" align="absmiddle"> **[Install Guide](docs/INSTALL.md)** | **Build/set up** a device: flash the Pi, run the installer, and get a working Library. |
 | <img src="docs/icons/png/developer.png" alt="" height="18" align="absmiddle"> **[Dev Guide](docs/DEVELOPERS.md)** | **Understand or modify** how it works - architecture, container build pipeline, and adding new services. |
 
@@ -51,10 +52,16 @@ Additional reference:
 - Each service has its own README under [`setup_library/files/containers/`](setup_library/files/containers/):
   [hotspot](setup_library/files/containers/hotspot/README.md),
   [webserver](setup_library/files/containers/webserver/README.md),
-  [wiki](setup_library/files/containers/wiki),
+  [wiki](setup_library/files/containers/wiki/README.md),
   [music](setup_library/files/containers/music/README.md),
   [calibre-web](setup_library/files/containers/calibre-web/README.md),
-  [library_maps](setup_library/files/containers/library_maps/README.md).
+  [library_maps](setup_library/files/containers/library_maps/README.md),
+  [meshtastic](setup_library/files/containers/meshtastic/README.md),
+  [meshflash](setup_library/files/containers/meshflash/README.md).
+- [Display role](setup_library/roles/update_display/README.md) - the legacy HTTP status-message helper.
+- Historical material: [flasher design notes](setup_library/files/containers/meshflash/flash_tui.md)
+  and the [Meshtastic development conversation](setup_library/files/containers/meshtastic/conversation.md).
+  Use the service READMEs for current build and operating instructions.
 
 ---
 
@@ -67,7 +74,30 @@ Additional reference:
 | <img src="docs/icons/png/music.png" alt="" height="20" align="absmiddle"> Music | [LMS](https://github.com/epoupon/lms) | `http://10.1.1.1:9099` |
 | <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
 | <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
+| [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
 | <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
+
+---
+
+## Meshtastic Communications
+
+Connect a Meshtastic radio to the **Raspberry Pi** and use your phone, tablet, or
+laptop to send and receive mesh messages through the Library's browser interface.
+Open **Meshtastic** from the home page or visit **`http://library:8086`**. Your
+browser connects to the Pi over WiFi; the attached radio communicates with other
+Meshtastic radios over LoRa. Messaging does not require internet or cellular service.
+
+You need a compatible USB radio, antenna, data cable, and another reachable
+Meshtastic node with compatible settings. Use one active browser connection to
+the Library radio at a time. If no configured radio responds, the same address
+offers the offline firmware setup terminal for supported ESP32 boards.
+
+First startup and connection can take a hot minute while the radio initializes
+and discovers nodes. Check the [bridge status](http://10.1.1.1:8086/bridge/status):
+`"ready": true` means the radio bridge is ready to connect.
+
+Follow [Meshtastic Communications in the Usage Guide](docs/USAGE.md#meshtastic-communications)
+for connecting, sending messages, checking nodes, and setting up a new radio.
 
 ---
 
@@ -81,12 +111,19 @@ Additional reference:
                                              ├─ music     10.88.0.210:5082
                                              ├─ calibre   10.88.0.211:8083
                                              ├─ maps                :8080
-                                             └─ graphhopper 10.88.0.213:8989 (routing)
+                                             ├─ graphhopper 10.88.0.213:8989 (routing)
+                                             └─ meshtastic OR meshflash :8086 ⇦ USB radio
                                         content ⇦ USB drive mounted at /Library
 ```
 
 Everything runs as Podman containers on the Pi. Content lives on a USB drive, so the
 images stay stateless. See the [Developer Guide](docs/DEVELOPERS.md) for the full picture.
+
+At startup, a radio that answers the Meshtastic protocol opens the Meshtastic client
+on port 8086. If no radio answers, the same address offers firmware setup. Plug the
+radio into the **Pi**, not the browser computer. The bridge never flashes firmware;
+meshflash requires confirmation. After setup finishes, reboot or rerun the radio
+startup check. See [Meshtastic Communications](docs/USAGE.md#meshtastic-communications).
 
 ---
 
@@ -110,6 +147,8 @@ requirements are in the [Installation Guide](docs/INSTALL.md).
 - Raspberry Pi 3, 4, or 5 with Raspberry Pi OS (64-bit) - Bullseye, Bookworm, or Trixie
 - A USB drive for content (reformatted to exFAT during install)
 - An optional TFT or HDMI display for boot status
+- For mesh messaging: a USB Meshtastic radio, suitable antenna, and USB data cable
+- For offline firmware installation: an ESP32-family radio supported by meshflash
 - Internet **during installation only**
 
 

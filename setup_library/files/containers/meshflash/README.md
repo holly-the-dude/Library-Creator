@@ -59,7 +59,7 @@ The build script requires both radio Containerfiles and builds each as
 full build during maintenance, after any flash finishes, because it removes old
 images before rebuilding. See the [developer guide](../../../../docs/DEVELOPERS.md#container-build-pipeline)
 for the base-image and deployment workflow, and the
-[usage guide](../../../../docs/USAGE.md#using-meshtastic-and-radio-setup)
+[usage guide](../../../../docs/USAGE.md#meshtastic-communications)
 for the browser connection steps.
 
 ## Build and run on the Pi
