@@ -660,6 +660,51 @@
       ansible.builtin.debug:
         var: maps_exist.stdout
 
+    # A web selection is only a request. Activate it before GraphHopper starts,
+    # with the previous extract kept until the replacement passes verification.
+    - name: check for a requested routing region
+      ansible.builtin.stat:
+        path: /Library/maps/osm/routing-pending.json
+        follow: false
+      register: routing_pending
+
+    - name: activate downloaded routing region
+      when: routing_pending.stat.exists
+      tags: [routing_activation]
+      become: true
+      block:
+        - name: require a regular routing request file
+          ansible.builtin.assert:
+            that: routing_pending.stat.isreg | default(false)
+        - name: require images for routing activation
+          ansible.builtin.command:
+            argv: [podman, image, exists, "{{ item }}"]
+          loop:
+            - localhost/data_download:latest
+            - localhost/library_maps-graphhopper:11
+          changed_when: false
+        - name: stop routing before changing its input
+          ansible.builtin.command:
+            argv: [podman, stop, --ignore, graphhopper]
+        - name: activate verified routing input offline
+          ansible.builtin.command:
+            argv:
+              - podman
+              - run
+              - --rm
+              - --network=none
+              - --entrypoint=python3
+              - --mount
+              - type=bind,src=/Library,dst=/Library
+              - localhost/data_download:latest
+              - /opt/data_download/routing.py
+      rescue:
+        - name: keep previous routing data after activation failure
+          ansible.builtin.debug:
+            msg: >-
+              Routing selection could not be activated. The pending request is
+              kept for retry; check the error above and downloader routing status.
+
     # Detect the optional routing extract. Routing is only started when this
     # file is present, so a maps-only build (no OSM extract) still works.
     - name: see if routing extract exists
@@ -1186,6 +1231,13 @@
         - name: start installed data downloader
           when: data_download_image.rc == 0
           block:
+            - name: data downloader starting
+              ansible.builtin.shell: |
+                sleep 2
+                displayit start_data_downloader.jpg
+                sleep 2
+              become: true
+
             - name: confirm Library USB is mounted before starting downloader
               ansible.builtin.command: mountpoint -q /Library
               changed_when: false

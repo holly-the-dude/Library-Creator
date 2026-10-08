@@ -65,6 +65,10 @@ When the optional `data_download` image is installed, Library startup launches i
 Select **Downloads** between **Meshtastic** and **Shutdown**, or open
 **http://library:4826** or **http://10.1.1.1:4826**. This setup tool needs an
 internet connection on the Pi; reading downloaded content remains offline.
+The **Routing** tab also offers US regional extracts for directions. After a file
+finishes downloading, choose **Use after restart**, then shut down and restart.
+Only one routing region is active at a time; the first import can take time and
+needs additional storage and RAM.
 See the [Data Download setup guide](../setup_library/files/containers/data_download/README.md)
 for building and starting the container on your Raspberry Pi.
 

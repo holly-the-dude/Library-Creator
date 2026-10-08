@@ -112,6 +112,7 @@ installed, Library startup launches it automatically before the webserver.
 The downloader checks the USB drive's available space and lets you choose:
 
 - Regional PMTiles maps → `/Library/maps/pmtiles/`
+- Routing extracts → `/Library/maps/osm/` (choose a region to use after restart)
 - Wikipedia ZIM files → `/Library/wiki/`
 - Survivor Library category ZIP collections, extracted as PDFs → `/Library/library/`
 
@@ -124,6 +125,20 @@ so the new files become available in its readers.
 The maps container bundles its required fonts and sprites and copies missing files
 onto the USB drive at startup, preserving existing files. See
 [automatic map asset setup](setup_library/files/containers/library_maps/README.md#automatic-font-and-sprite-setup).
+
+Driving directions use separate OpenStreetMap extracts from
+[Geofabrik](https://download.geofabrik.de/). See the
+[routing data guide](setup_library/files/containers/data_download/docs/ROUTING.md)
+for download locations and setup. In the **Routing** tab, download a US region
+and choose **Use after restart**. The next Library startup activates that region
+and builds its directions; allow extra time, RAM, and storage for the import.
+
+Thanks to Project N.O.M.A.D., Pendia, Protomaps, OpenStreetMap contributors, and
+Rocky at Survivor Library for making this content accessible. Years ago, I shared
+an alpha version of this project with Rocky, and he was okay with what I was
+building. A small portion of full-kit proceeds may be donated to Survivor Library.
+See the [source acknowledgments and license notes](setup_library/files/containers/data_download/README.md#source-acknowledgments-and-availability)
+for details, including source availability and the discretionary donation policy.
 
 See the [downloader setup guide](setup_library/files/containers/data_download/README.md)
 for building, deployment, Python/API documentation, and troubleshooting. Existing
