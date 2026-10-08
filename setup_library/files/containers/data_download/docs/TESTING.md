@@ -26,6 +26,7 @@ To run the suite inside the image, mount the tests and override its entrypoint:
 sudo podman build -t localhost/data_download:latest -f Containerfile .
 sudo podman run --rm --network=none \
   --mount "type=bind,src=$PWD/tests,dst=/tests,ro" \
+  --mount "type=bind,src=$PWD/../../library_control.py,dst=/library_control.py,ro" \
   --entrypoint python3 localhost/data_download:latest \
   -m unittest discover -s /tests -v
 ```
@@ -43,6 +44,14 @@ read-only mount is required. The image working directory makes `app` and
 | `StorageTests` | PDF-only extraction, unsafe ZIP entries, expanded-space checks, preservation of existing categories, CRC failure cleanup, source isolation/cache reload, duplicate queue submissions, publication of all four content types |
 | `StorageTests` | Offline startup before storage/discovery, exact offline text, reconnection refresh, 30-second timing, and manual refresh gating |
 | `HTTPTests` | Static/API GET routes and headers, continued responses with a broken access-log pipe, token enforcement, and rejection of download requests outside the accepted workflow |
+| `RestartTests` | Real Unix socket requests with systemctl mocked, rejection of arbitrary commands, active-job blocking, duplicate suppression, failed-host retries, and missing-handler fallback |
+
+Restart tests never invoke a real shutdown or systemd action. The extra host
+Python module mount above is needed only for these bridge tests. Before a manual
+restart test on a Pi, finish downloads, select a routing region if needed, and
+expect the Library Wi-Fi connection to drop. Check that both splash screens
+appear, power remains connected, and services return after reboot. This manual
+test really reboots the appliance; it is separate from the automated suite.
 
 `Response` is an in-memory `BytesIO` object with HTTP status and headers. Source
 requests are patched to return these fixtures or errors. ZIP tests create small

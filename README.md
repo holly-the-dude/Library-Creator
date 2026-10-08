@@ -119,8 +119,11 @@ The downloader checks the USB drive's available space and lets you choose:
 The Pi needs internet access to discover and download new content. While offline,
 the page displays **"No Internet, its really hard to go on like this"** and checks
 again every **30 seconds**. Reading previously downloaded content works offline.
-After downloads finish, a popup reminds you to **shut down and restart the Library**
-so the new files become available in its readers.
+After downloads finish, a popup offers **Restart Library** or **I'll restart
+later** so new files become available in its readers. Restart stops containers
+gracefully and reboots automatically; keep the power connected. Existing builds
+need the [host restart handler](setup_library/files/containers/data_download/docs/RESTART.md)
+and an updated downloader before this button is enabled.
 
 The maps container bundles its required fonts and sprites and copies missing files
 onto the USB drive at startup, preserving existing files. See

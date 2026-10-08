@@ -193,13 +193,16 @@ After a poll reports successful downloads and no active jobs, the frontend opens
 a restart-reminder dialog. A page-local set of acknowledged completion IDs keeps
 it from reopening on every poll. New successful batches trigger another reminder;
 failures/cancellations alone do not. Reopening the page can show the reminder for
-completed jobs still held by the server. The dialog only reminds the user to shut
-down and restart the Library; it does not call a shutdown endpoint.
+completed jobs still held by the server. The Restart Library button sends a
+token-protected POST to `/api/restart`. The application lock serializes restart
+with queue admission: active jobs block restart and an accepted restart blocks
+new jobs. The browser stops polling after acceptance and displays reconnect
+instructions. A dedicated host Unix socket schedules the fixed graceful restart
+service; see [RESTART.md](RESTART.md) for the Python bridge and shell sequence.
 
-This service is currently started manually. Adding automatic Library startup or
-navigation integration requires separate changes to the appliance's playbooks
-and service configuration; adding a Containerfile alone only enables the existing
-build/export scripts to discover the image.
+The startup playbook starts the optional downloader before web hub discovery.
+The installer supplies host restart services; older hosts can run the downloader
+without them, with the restart button disabled.
 
 ## Routing selection and activation
 

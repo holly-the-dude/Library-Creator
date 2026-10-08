@@ -1,0 +1,11 @@
+#!/bin/bash
+# Run on the host through library-restart.service, never inside the downloader.
+source /root/.profile
+/usr/local/bin/displayit library_shutting_down.jpg
+sleep 2
+# Equivalent to stopping each ID from `podman ps`, without parsing a table.
+# Do not reboot if Podman cannot stop the containers.
+/usr/bin/podman stop --all --time 30 || exit 1
+/usr/local/bin/displayit library_ok_to_poweroff.jpg
+sleep 2
+/usr/sbin/shutdown -r now

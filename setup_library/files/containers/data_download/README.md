@@ -186,8 +186,11 @@ the playbook recreates the named downloader with the correct mapping.
 6. For routing files, select **Use after restart** in the Routing tab after the
    download is complete. The choice is saved on the USB drive.
 7. After the queue finishes with successful downloads, a popup reminds you to
-   **shut down and restart the Library** so the new files become available. Use
-   the Library's Shutdown option, wait for shutdown to finish, then start it again.
+   **restart the Library** so the new files become available. Choose **Restart
+   Library** for a graceful automatic reboot, or **I'll restart later**. Keep power
+   connected. Older installations need the [host restart handler](docs/RESTART.md)
+   before the button is enabled; otherwise use the Library's Shutdown option,
+   wait for shutdown to finish, then start it again.
    The reminder waits until downloads and extraction are idle, and appears once
    per completed batch while the page is open. Its button dismisses the reminder;
    it does not shut down the device.

@@ -1,0 +1,11 @@
+[Unit]
+Description=Handle Library restart requests
+Requires=library-control.socket
+After=library-control.socket
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/library_control.py
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true

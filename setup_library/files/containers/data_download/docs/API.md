@@ -97,6 +97,18 @@ login or an authorization boundary between users on the Library LAN: anyone
 who can read the API can obtain it. Responses send no-store, nosniff, and a
 same-origin Content Security Policy; no CORS access is configured.
 
+### Restart the Library
+
+`POST /api/restart` with `{}` and `X-Library-Token` schedules a graceful host
+restart. `202` means the host accepted the request. Active jobs, a missing host
+socket, or bridge failure return `400` with an error message. Repeated requests
+after acceptance return `202` without scheduling another job. New downloads are
+rejected after acceptance. GET never requests restart.
+
+State and catalog responses include `restart: {available: boolean, requested:
+boolean}`. Availability means the socket is present, not that the complete host
+restart sequence is healthy. See [RESTART.md](RESTART.md).
+
 ### Refresh sources
 
 ```http

@@ -39,10 +39,11 @@
   </main>
   <dialog id="restart-reminder" aria-labelledby="restart-title" aria-describedby="restart-message">
     <h2 id="restart-title">Restart the Library to use your new files</h2>
-    <p id="restart-message">New files have been downloaded. Please shut down the Library using its Shutdown option, then start it again so the new files become available.</p>
+    <p id="restart-message">New files have been downloaded. Restart the Library so the new files become available.</p>
     <p>For routing downloads, first choose <strong>Use after restart</strong> in the Routing tab. Downloading a region alone does not activate it.</p>
-    <p>Wait for shutdown to finish before turning the Library back on. Routing may take time to build on startup.</p>
-    <form method="dialog"><button autofocus>OK, I'll restart later</button></form>
+    <p>Restart Library stops the containers gracefully and reboots automatically. Keep the power connected. Routing may take time to build on startup.</p>
+    <p id="restart-status" role="status"></p>
+    <form method="dialog"><button class="secondary" autofocus>I'll restart later</button> <button type="button" id="restart-now" disabled>Restart Library</button></form>
   </dialog>
 </body>
 </html>

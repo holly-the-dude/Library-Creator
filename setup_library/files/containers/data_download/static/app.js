@@ -3,6 +3,7 @@ const $ = id => document.getElementById(id);
 const activeStates = new Set(["queued", "downloading", "verifying", "extracting"]);
 let state = {catalog: [], jobs: [], sources: {}, storage: {}, internet: {status: "checking"}}, source = "maps", page = 0;
 let selected = new Set(), visible = [], pollNumber = 0;
+let restartBusy = false, restartError = "";
 const remindedDownloads = new Set();
 const pageSize = 40;
 const destinations = {routing: "/Library/maps/osm", maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", survivor: "/Library/library"};
@@ -189,6 +190,11 @@ function renderRouting() {
 // becomes idle. Failed/cancelled jobs alone must not trigger a restart reminder.
 function showRestartReminder() {
   const dialog = $("restart-reminder");
+  $("restart-now").disabled = restartBusy || !state.restart?.available || state.restart?.requested;
+  $("restart-status").textContent = restartError || (state.restart?.requested
+    ? "Restart requested. Keep power connected and reload this page when the Library is back online."
+    : restartBusy ? "Requesting a graceful restart…"
+    : state.restart?.available ? "" : "Automatic restart is not installed. Use the Library's Shutdown option, then turn it back on after shutdown finishes.");
   const active = state.jobs.filter(job => activeStates.has(job.status));
   for (const job of active) remindedDownloads.delete(job.id);
   if (active.length) {
@@ -201,14 +207,16 @@ function showRestartReminder() {
   for (const job of completed) remindedDownloads.add(job.id);
 }
 async function poll() {
+  if (state.restart?.requested) return;
   try {
     const includeCatalog = pollNumber++ % 5 === 0 || state.refreshing;
     const fresh = await api(includeCatalog ? "/api/catalog" : "/api/state");
+    if (state.restart?.requested) return;
     state = {...state, ...fresh};
     selected = new Set([...selected].filter(id => state.catalog.some(row => row.id === id && eligible(row))));
     renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting();
     showRestartReminder();
-  } catch (error) { notice("Cannot reach the downloader: " + error.message); }
+  } catch (error) { if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message); }
   setTimeout(poll, 2500);
 }
 async function download(ids) {
@@ -226,6 +234,21 @@ $("previous").addEventListener("click", () => { page--; renderFiles(); });
 $("next").addEventListener("click", () => { page++; renderFiles(); });
 $("select-page").addEventListener("change", () => {
   visible.filter(eligible).forEach(row => $("select-page").checked ? selected.add(row.id) : selected.delete(row.id)); renderFiles();
+});
+$("restart-now").addEventListener("click", async () => {
+  restartBusy = true; restartError = "";
+  $("restart-now").disabled = true;
+  $("restart-status").textContent = "Requesting a graceful restart…";
+  try {
+    await api("/api/restart", {});
+    state.restart.requested = true;
+    showRestartReminder();
+  } catch (error) {
+    restartError = error.message;
+  } finally {
+    restartBusy = false;
+    showRestartReminder();
+  }
 });
 $("download").addEventListener("click", () => download([...selected]));
 $("refresh").addEventListener("click", async () => {

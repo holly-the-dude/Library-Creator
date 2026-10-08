@@ -442,6 +442,21 @@ class HTTPTests(unittest.TestCase):
         with urlopen(request) as response:
             self.assertEqual(response.status, 202)
 
+    def test_restart_is_token_protected_post_only(self):
+        with patch.object(app, "restart_available", return_value=True), patch.object(app, "request_host_restart") as restart:
+            for method, status in [("GET", 404), ("POST", 403)]:
+                request = Request(self.base + "/api/restart", method=method,
+                                  data=b'{}' if method == "POST" else None)
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(request)
+                self.assertEqual(error.exception.code, status)
+            restart.assert_not_called()
+            request = Request(self.base + "/api/restart", data=b'{}',
+                              headers={"X-Library-Token": self.application.token})
+            with urlopen(request) as response:
+                self.assertEqual(response.status, 202)
+            restart.assert_called_once()
+
     def test_broken_access_log_pipe_does_not_abort_http_response(self):
         # A stopped container log collector can leave stderr with no reader.
         broken_log = unittest.mock.Mock()

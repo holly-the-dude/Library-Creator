@@ -20,6 +20,7 @@ import queue
 import re
 import secrets
 import signal
+import socket
 import shutil
 import stat
 import tempfile
@@ -37,6 +38,27 @@ STATIC = Path(__file__).parent / "static"
 ACTIVE = {"queued", "downloading", "verifying", "extracting"}
 INTERNET_POLL_SECONDS = 30
 OFFLINE_MESSAGE = "No Internet, its really hard to go on like this"
+CONTROL_SOCKET = "/run/library-control/control.sock"
+
+
+def restart_available():
+    """The host installer supplies an optional root-only control socket."""
+    try:
+        return stat.S_ISSOCK(os.stat(CONTROL_SOCKET).st_mode)
+    except OSError:
+        return False
+
+
+def request_host_restart():
+    """Schedule the fixed graceful host action; never execute shell commands."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(12)
+        client.connect(CONTROL_SOCKET)
+        client.sendall(b"restart\n")
+        with client.makefile("rb") as response:
+            message = response.readline(256)
+        if message != b"OK\n":
+            raise ValueError("Host did not confirm restart. Check library-control.service logs.")
 
 
 class Cancelled(Exception):
@@ -326,6 +348,19 @@ class Application:
         self.internet = {"status": "checking", "message": "Checking internet connection…"}
         self.initialized = False
         self.stopping = threading.Event()
+        self.restart_requested = False
+
+    def restart(self):
+        """Serialize restart with queue admission; wait for every active job."""
+        with self.lock:
+            if self.restart_requested:
+                return
+            if any(job["status"] in ACTIVE for job in self.jobs.values()):
+                raise ValueError("Wait for downloads, verification and extraction to finish before restarting")
+            if not restart_available():
+                raise ValueError("Restart control is not installed. Use the Library Shutdown option instead.")
+            request_host_restart()
+            self.restart_requested = True
 
     def load_cache(self):
         """Load persisted catalog rows; missing/unreadable caches are nonfatal.
@@ -444,6 +479,8 @@ class Application:
                 raise ValueError(self.internet["message"])
         self.storage.space()
         with self.lock:
+            if self.restart_requested:
+                raise ValueError("The Library is restarting; wait for it to come back online")
             rows = []
             for identity in dict.fromkeys(ids):
                 if identity not in self.catalog:
@@ -552,6 +589,7 @@ class Application:
                       "sources": copy.deepcopy(self.sources),
                       "refreshing": self.refreshing, "jobs": copy.deepcopy(list(self.jobs.values())),
                       "token": self.token,
+                      "restart": {"available": restart_available(), "requested": self.restart_requested},
                       "routing": routing.Routing(self.storage).status() if self.initialized else
                           {"downloads": [], "pending": None, "active": None}}
             if include_catalog:
@@ -623,6 +661,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected a JSON object")
             if self.path == "/api/download":
                 self.server.app.enqueue(body.get("ids"))
+            elif self.path == "/api/restart":
+                self.server.app.restart()
             elif self.path == "/api/routing":
                 if "filename" not in body:
                     raise ValueError("Specify a routing filename, or null to cancel")

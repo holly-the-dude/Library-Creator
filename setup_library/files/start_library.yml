@@ -1242,21 +1242,21 @@
               ansible.builtin.command: mountpoint -q /Library
               changed_when: false
 
+            - name: check optional host restart socket
+              ansible.builtin.stat:
+                path: /run/library-control/control.sock
+              register: library_control_socket
+
             - name: run data downloader
               ansible.builtin.command:
-                argv:
-                  - podman
-                  - run
-                  - -d
-                  - --name=data_download
-                  - --replace
-                  - --restart=unless-stopped
-                  - --ip=10.88.0.215
-                  - -p
-                  - 0.0.0.0:4826:4286
-                  - --mount
-                  - type=bind,src=/Library,dst=/Library
-                  - localhost/data_download:latest
+                argv: >-
+                  {{ ['podman', 'run', '-d', '--name=data_download', '--replace',
+                      '--restart=unless-stopped', '--ip=10.88.0.215',
+                      '-p', '0.0.0.0:4826:4286',
+                      '--mount', 'type=bind,src=/Library,dst=/Library']
+                     + (['--mount', 'type=bind,src=/run/library-control,dst=/run/library-control,ro=true']
+                        if library_control_socket.stat.issock | default(false) else [])
+                     + ['localhost/data_download:latest'] }}
 
             - name: wait for downloader local web interface
               ansible.builtin.uri:

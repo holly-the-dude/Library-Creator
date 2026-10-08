@@ -1,0 +1,11 @@
+[Unit]
+Description=Library restart request socket
+
+[Socket]
+ListenStream=/run/library-control/control.sock
+SocketMode=0600
+DirectoryMode=0700
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

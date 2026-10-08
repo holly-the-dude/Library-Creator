@@ -1,0 +1,9 @@
+[Unit]
+Description=Gracefully restart the Library and its containers
+
+[Service]
+Type=oneshot
+# Allow the web request to return before stopping its container.
+ExecStartPre=/usr/bin/sleep 2
+ExecStart=/bin/bash /usr/local/bin/library_restart
+TimeoutStartSec=0

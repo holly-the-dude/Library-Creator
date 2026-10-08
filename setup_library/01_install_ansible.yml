@@ -136,6 +136,35 @@
       register: enablefbi
       become: true
 
+    - name: install graceful restart handler
+      copy:
+        src: "files/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        mode: '0755'
+      loop:
+        - library_restart
+        - library_control.py
+      become: true
+
+    - name: install restart socket and services
+      copy:
+        src: "files/{{ item }}"
+        dest: "/etc/systemd/system/{{ item }}"
+        mode: '0644'
+      loop:
+        - library-control.socket
+        - library-control.service
+        - library-restart.service
+      become: true
+
+    - name: enable downloader restart requests
+      ansible.builtin.systemd_service:
+        name: library-control.socket
+        daemon_reload: true
+        enabled: true
+        state: started
+      become: true
+
     - name: copy start_library.service to pi
       copy:
         src: files/start_library.service
@@ -272,4 +301,3 @@
     - debug:
         msg:
           - "{{ (podman_load | json_query('results[*].stdout_lines[0]')) }}"
-
