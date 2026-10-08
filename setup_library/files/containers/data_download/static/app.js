@@ -5,8 +5,9 @@ let state = {catalog: [], jobs: [], sources: {}, storage: {}, internet: {status:
 let selected = new Set(), visible = [], pollNumber = 0;
 const remindedDownloads = new Set();
 const pageSize = 40;
-const destinations = {maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", survivor: "/Library/library"};
+const destinations = {routing: "/Library/maps/osm", maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", survivor: "/Library/library"};
 const hints = {
+  routing: "US regional OpenStreetMap extracts from Geofabrik. MD5 and OSM headers are checked. Download first, then choose Use after restart below. Import needs additional disk space and RAM; start with a small region.",
   maps: "Regional PMTiles files. Git LFS map checksums are verified after download.",
   wiki: "Search a language code such as wikipedia_en_. Latest editions keeps the newest date for each variant.",
   survivor: "Category ZIPs only. PDFs are extracted into a category folder; the ZIP is then removed. Space is needed for both the ZIP and its PDFs."
@@ -154,6 +155,36 @@ function renderJobs() {
     $("jobs").append(card);
   }
 }
+function renderRouting() {
+  $("routing-panel").hidden = source !== "routing";
+  const info = state.routing || {downloads: []};
+  $("routing-status").textContent = info.error || (info.pending
+    ? `Next restart: ${info.pending.title}. Shut down and restart to build directions.`
+    : info.active ? `Selected region: ${info.active.title}. Directions become available after import finishes.`
+    : "No region selected here yet. Existing manually installed routing is kept until you choose a replacement.");
+  $("routing-downloads").replaceChildren();
+  for (const row of info.downloads) {
+    const line = element("div", undefined, "job-head");
+    line.append(element("span", row.title));
+    const button = element("button", info.pending?.filename === row.filename ? "Queued for restart" : "Use after restart", "secondary");
+    button.disabled = !state.storage.ready || info.pending?.filename === row.filename;
+    button.addEventListener("click", async () => {
+      if (!confirm(`Use ${row.title} after the next shutdown and restart? This replaces the active routing region and rebuilds directions. The existing region continues working until restart.`)) return;
+      try { await api("/api/routing", {filename: row.filename}); state.routing.pending = row; notice("Routing region selected. Shut down and restart the Library after downloads finish."); renderRouting(); }
+      catch (error) { notice(error.message); }
+    });
+    line.append(button); $("routing-downloads").append(line);
+  }
+  if (!info.downloads.length) $("routing-downloads").append(element("p", "No verified routing downloads yet."));
+  if (info.pending) {
+    const cancel = element("button", "Cancel region change", "secondary");
+    cancel.addEventListener("click", async () => {
+      try { await api("/api/routing", {filename: null}); state.routing.pending = null; renderRouting(); }
+      catch (error) { notice(error.message); }
+    });
+    $("routing-downloads").append(cancel);
+  }
+}
 // Remind once per completed batch while this page is open, after the queue
 // becomes idle. Failed/cancelled jobs alone must not trigger a restart reminder.
 function showRestartReminder() {
@@ -175,7 +206,7 @@ async function poll() {
     const fresh = await api(includeCatalog ? "/api/catalog" : "/api/state");
     state = {...state, ...fresh};
     selected = new Set([...selected].filter(id => state.catalog.some(row => row.id === id && eligible(row))));
-    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs();
+    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting();
     showRestartReminder();
   } catch (error) { notice("Cannot reach the downloader: " + error.message); }
   setTimeout(poll, 2500);
@@ -188,7 +219,7 @@ $("home").href = `${location.protocol}//${location.hostname.includes(":") ? "[" 
 document.querySelectorAll("[data-source]").forEach(button => button.addEventListener("click", () => {
   source = button.dataset.source; page = 0;
   document.querySelectorAll("[data-source]").forEach(tab => tab.setAttribute("aria-pressed", String(tab === button)));
-  renderFiles();
+  renderFiles(); renderRouting();
 }));
 for (const id of ["search", "fits", "latest"]) $(id).addEventListener("input", () => { page = 0; renderFiles(); });
 $("previous").addEventListener("click", () => { page--; renderFiles(); });

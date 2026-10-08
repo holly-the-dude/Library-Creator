@@ -30,6 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
 
 import sources
+import routing
 
 CHUNK = 1024 * 1024
 STATIC = Path(__file__).parent / "static"
@@ -215,13 +216,27 @@ def verify(row, path, event):
         raise ValueError("Downloaded file size does not match the catalog")
     if row["source"] == "survivor" and not zipfile.is_zipfile(path):
         raise ValueError("Source did not return a valid ZIP file")
+    if row["source"] == "routing":
+        routing.check_pbf(path)
+        if not row.get("md5"):
+            raise ValueError("Routing checksum metadata missing; refresh sources")
     with path.open("rb") as downloaded:
         magic = downloaded.read(8)
         if row["source"] == "maps" and not magic.startswith(b"PMTiles"):
             raise ValueError("Source did not return a PMTiles file")
         if row["source"] == "wiki" and not magic.startswith(b"ZIM\x04"):
             raise ValueError("Source did not return a ZIM file")
-        if row.get("sha256"):
+        if row["source"] == "routing":
+            downloaded.seek(0)
+            md5, sha256 = hashlib.md5(usedforsecurity=False), hashlib.sha256()
+            while block := downloaded.read(CHUNK):
+                check_cancel(event)
+                md5.update(block)
+                sha256.update(block)
+            if md5.hexdigest() != row["md5"]:
+                raise ValueError("Routing MD5 mismatch; refresh sources before retrying")
+            row["sha256"] = sha256.hexdigest()
+        elif row.get("sha256"):
             downloaded.seek(0)
             digest = hashlib.sha256()
             while block := downloaded.read(CHUNK):
@@ -506,6 +521,14 @@ class Application:
                     if target.exists():
                         raise ValueError("Destination already exists; existing content was kept")
                     part.rename(target)
+                if row["source"] == "routing":
+                    try:
+                        routing.Routing(self.storage).record_download(row)
+                    except Exception:
+                        # Keep a verified transfer retryable if its receipt
+                        # could not be saved (for example, a full filesystem).
+                        target.rename(part)
+                        raise
                 part.with_suffix(".json").unlink(missing_ok=True)
                 progress(status="complete")
             except Cancelled as exc:
@@ -528,7 +551,9 @@ class Application:
             result = {"storage": disk, "internet": self.internet.copy(),
                       "sources": copy.deepcopy(self.sources),
                       "refreshing": self.refreshing, "jobs": copy.deepcopy(list(self.jobs.values())),
-                      "token": self.token}
+                      "token": self.token,
+                      "routing": routing.Routing(self.storage).status() if self.initialized else
+                          {"downloads": [], "pending": None, "active": None}}
             if include_catalog:
                 rows = copy.deepcopy(list(self.catalog.values()))
                 for row in rows:
@@ -598,6 +623,10 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected a JSON object")
             if self.path == "/api/download":
                 self.server.app.enqueue(body.get("ids"))
+            elif self.path == "/api/routing":
+                if "filename" not in body:
+                    raise ValueError("Specify a routing filename, or null to cancel")
+                routing.Routing(self.server.app.storage).select(body["filename"])
             elif self.path == "/api/refresh":
                 self.server.app.refresh()
             elif self.path == "/api/cancel":

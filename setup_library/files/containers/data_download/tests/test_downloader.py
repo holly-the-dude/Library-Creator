@@ -52,7 +52,7 @@ class DiscoveryTests(unittest.TestCase):
     def test_internet_probe_reports_offline_when_all_hosts_fail(self):
         with patch.object(sources, "urlopen", side_effect=URLError("DNS failed")) as request:
             self.assertFalse(sources.internet_available())
-        self.assertEqual(request.call_count, 3)
+        self.assertEqual(request.call_count, 4)
 
     def test_server_rate_limit_still_means_internet_is_available(self):
         error = HTTPError("https://github.com/", 429, "Rate limited", {}, io.BytesIO())
@@ -286,7 +286,7 @@ class StorageTests(unittest.TestCase):
         self.assertIn(cached["id"], application.catalog)
         loaded = app.Application(self.storage)
         loaded.load_cache()
-        self.assertEqual(len(loaded.catalog), 3)
+        self.assertEqual(len(loaded.catalog), 4)
 
     def test_queue_rejects_unknown_and_duplicate_downloads(self):
         application = app.Application(self.storage)
@@ -299,7 +299,7 @@ class StorageTests(unittest.TestCase):
         application.enqueue([row["id"]])
         self.assertEqual(application.queue.qsize(), 1)
 
-    def test_worker_publishes_all_three_content_types(self):
+    def test_worker_publishes_all_four_content_types(self):
         application = app.Application(self.storage)
         application.internet["status"] = "online"
         pdf_archive = io.BytesIO()
@@ -307,8 +307,11 @@ class StorageTests(unittest.TestCase):
             bundle.writestr("manual.pdf", b"%PDF-1.7 test manual")
             bundle.writestr("readme.txt", b"not extracted")
         payloads = {"maps": b"PMTiles\x03test-map", "wiki": b"ZIM\x04test-wiki", "survivor": pdf_archive.getvalue()}
+        from test_routing import pbf
+        payloads["routing"] = pbf()
         rows = [sources.item(key, "https://example.org/" + filename, len(payloads[key]))
-                for key, filename in [("maps", "State.pmtiles"), ("wiki", "wikipedia.zim"), ("survivor", "Manuals.ZIP")]]
+                for key, filename in [("maps", "State.pmtiles"), ("wiki", "wikipedia.zim"), ("survivor", "Manuals.ZIP"), ("routing", "georgia-latest.osm.pbf")]]
+        rows[-1]["md5"] = hashlib.md5(payloads["routing"]).hexdigest()
         for row in rows:
             application.catalog[row["id"]] = row
         responses = [Response(payloads[row["source"]], headers={"Content-Length": str(row["size"])}) for row in rows]
@@ -330,6 +333,8 @@ class StorageTests(unittest.TestCase):
         self.assertTrue(all(job["status"] == "complete" for job in application.jobs.values()))
         self.assertEqual((self.root / "maps/pmtiles/State.pmtiles").read_bytes(), payloads["maps"])
         self.assertEqual((self.root / "wiki/wikipedia.zim").read_bytes(), payloads["wiki"])
+        self.assertEqual((self.root / "maps/osm/georgia-latest.osm.pbf").read_bytes(), payloads["routing"])
+        self.assertEqual(len(app.routing.Routing(self.storage).status()["downloads"]), 1)
         self.assertTrue((self.root / "library/Manuals/manual.pdf").is_file())
         self.assertFalse((self.root / "library/Manuals/readme.txt").exists())
         self.assertEqual(list((self.root / ".data_download").iterdir()), [])
@@ -422,6 +427,20 @@ class HTTPTests(unittest.TestCase):
         with self.assertRaises(HTTPError) as error:
             urlopen(request)
         self.assertEqual(error.exception.code, 400)
+
+    def test_routing_selection_requires_token_and_valid_verified_file(self):
+        request = Request(self.base + "/api/routing", data=b'{"filename":"georgia-latest.osm.pbf"}',
+                          headers={"Content-Type": "application/json"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request)
+        self.assertEqual(error.exception.code, 403)
+        request.add_header("X-Library-Token", self.application.token)
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request)
+        self.assertEqual(error.exception.code, 400)
+        request.data = b'{"filename":null}'
+        with urlopen(request) as response:
+            self.assertEqual(response.status, 202)
 
     def test_broken_access_log_pipe_does_not_abort_http_response(self):
         # A stopped container log collector can leave stderr with no reader.

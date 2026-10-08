@@ -31,7 +31,7 @@ internet availability, a mounted drive, or successful downloads.
 | --- | --- |
 | `internet` | `status` (`checking`, `offline`, `online`) and `message` |
 | `storage` | Capacity fields when ready, otherwise a readiness error |
-| `sources` | Object keyed by `maps`, `wiki`, and `survivor` |
+| `sources` | Object keyed by `maps`, `routing`, `wiki`, and `survivor` |
 | `refreshing` | Whether a catalog scan is active |
 | `jobs` | List of this process's job records |
 | `token` | Per-process request token needed for POST actions |
@@ -69,7 +69,7 @@ Each row contains these fields:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | string | Stable 24-character hexadecimal ID derived from source and URL |
-| `source` | string | `maps`, `wiki`, or `survivor` |
+| `source` | string | `maps`, `routing`, `wiki`, or `survivor` |
 | `url` | string | Remote content URL resolved during discovery |
 | `filename` | string | Decoded, validated filename from the URL |
 | `title` | string | Display filename or category title |
@@ -170,3 +170,28 @@ return `400`; a missing/wrong token returns `403`; an unknown route returns `404
 Download failures after queue acceptance are reported in job state rather than
 changing the earlier HTTP response. Source failures similarly appear in
 `sources`, while health and state endpoints continue responding.
+
+## Routing downloads and selection
+
+Routing catalog rows use `source: "routing"`, an exact byte `size`, an upstream
+`md5`, and destination `maps/osm/<region>-latest.osm.pbf`. They use the existing
+`POST /api/download` queue. A successful transfer also saves a local SHA-256
+receipt. Existing unverified manually copied files are not eligible for selection.
+
+Both state and catalog responses include `routing`: `downloads` (verified local
+receipts), `pending` (next boot's choice or null), `active` (last activated choice
+or null), and optional `error`. Before initial connectivity/storage setup,
+`downloads` is empty and both selections are null. Each receipt has `filename`,
+`title`, `size`, and `sha256`. Active metadata does not prove GraphHopper is ready.
+
+`POST /api/routing` requires the normal `X-Library-Token` and a JSON object:
+
+```json
+{"filename": "georgia-latest.osm.pbf"}
+```
+
+This queues a verified local region for the next startup. Send `{"filename": null}`
+to cancel the pending choice. Missing fields, unverified files, unsafe names, and
+insufficient space return `400`; success returns `202`. No internet connection
+is required to select an already-downloaded file. Selection never changes the
+running routing engine. Use the updated appliance startup playbook to activate it.

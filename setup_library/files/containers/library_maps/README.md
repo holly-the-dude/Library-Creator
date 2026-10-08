@@ -54,6 +54,15 @@ podman run -d --name library_maps --add-host graphhopper:10.88.0.213 \
 
 Routing adds a second container (GraphHopper) that imports an OSM extract and answers `/api/route`.
 
+Get regional `.osm.pbf` extracts from [Geofabrik](https://download.geofabrik.de/),
+including its [US state downloads](https://download.geofabrik.de/north-america/us.html).
+See the [routing-data reference](../data_download/docs/ROUTING.md) for Georgia,
+the active `region.osm.pbf` path, import requirements, and source credits.
+The Data Download web UI now offers US routing extracts. Download a region,
+choose **Use after restart**, then shut down and restart the Library. This needs
+the updated startup playbook and the GraphHopper image; standalone Compose
+continues to use the manual steps below.
+
 ```bash
 cp .env.example .env                       # adjust MAPS_DIR / OSM_DIR if needed
 ./scripts/get-osm.sh colorado              # or: ./scripts/get-osm.sh /path/to/extract.osm.pbf

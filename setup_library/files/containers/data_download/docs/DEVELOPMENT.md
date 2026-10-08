@@ -10,7 +10,8 @@ the [testing guide](TESTING.md) covers automated and Raspberry Pi checks.
 | File | Responsibility | How it runs |
 | --- | --- | --- |
 | [app.py](../app.py) | HTTP server, connectivity lifecycle, storage checks, queue, downloads, validation, and extraction | Container entrypoint: `python3 /opt/data_download/app.py` |
-| [sources.py](../sources.py) | HTTPS connectivity probes and catalog discovery for the three sources | Imported by `app.py`; no standalone command |
+| [routing.py](../routing.py) | Verified routing receipts, pending selection, atomic activation after GraphHopper stops | Imported by `app.py`; boot CLI: `python3 /opt/data_download/routing.py` |
+| [sources.py](../sources.py) | HTTPS connectivity probes and catalog discovery for four sources | Imported by `app.py`; no standalone command |
 | [tests/test_downloader.py](../tests/test_downloader.py) | Offline regression tests and loopback HTTP tests | `python3 -m unittest discover -s tests -v` |
 | [static/app.js](../static/app.js) | Browser state polling, search, selection, and job controls | Loaded by the served page |
 | [static/index.html](../static/index.html), [static/style.css](../static/style.css) | Page structure and Library website colors | Served as fixed local assets |
@@ -35,14 +36,14 @@ flowchart TD
     Offline --> Wait[Wait until next 30-second check]
     Wait --> Check
     Check -->|First connection| Init[Check storage and load cached catalog]
-    Init --> Scan[Discover all three sources]
+    Init --> Scan[Discover all four sources]
     Check -->|Connection restored| Scan
     Scan --> Ready[User selects downloads]
     Ready --> Queue[Single download worker]
 ```
 
 `sources.internet_available()` sends HTTPS HEAD requests to GitHub, Wikimedia
-dumps, then Survivor Library, stopping at the first reachable host. Each request
+dumps, Survivor Library, then Geofabrik, stopping at the first reachable host. Each request
 uses a five-second timeout. An HTTP error such as 429 or 503 still establishes
 connectivity. DNS, connection, and TLS failures do not. Responses redirected to
 another hostname are not accepted as evidence of connectivity.
@@ -70,7 +71,7 @@ resumed by the monitor; network errors become retryable job failures.
 | HTTP request threads | Serve local assets and read or mutate application state |
 | `internet-monitor` | Probe connectivity and trigger startup/recovery discovery |
 | `catalog-discovery` | Start a scan per source and persist the resulting catalog |
-| Source scan threads | Independently discover maps, Wikipedia, and Survivor ZIPs |
+| Source scan threads | Independently discover maps, routing extracts, Wikipedia, and Survivor ZIPs |
 | Source thread pools | Up to four simultaneous map-pointer or category-page requests per source |
 | `download-worker` | Process one queued file at a time |
 
@@ -87,7 +88,7 @@ can remain for later retry, and interrupted extraction can leave a staging folde
 
 ## Source discovery in sources.py
 
-`discover(source, publish)` accepts `maps`, `wiki`, or `survivor`. Its callback
+`discover(source, publish)` accepts `maps`, `routing`, `wiki`, or `survivor`. Its callback
 receives lists of normalized catalog dictionaries. It returns an empty string
 on success or a warning for child-listing failures. Initial network/listing
 failures propagate to the application, which records a source error.
@@ -95,6 +96,7 @@ failures propagate to the application, which records a source error.
 | Source | Discovery method | Size and integrity metadata |
 | --- | --- | --- |
 | Maps | GitHub contents API for the configured repository's `pmtiles` directory | Entries below 1 KiB are resolved as LFS pointers; their actual size and SHA-256 accompany a GitHub media download URL |
+| Routing | Parse current US regional Geofabrik PBF links; HEAD each file and fetch its MD5 sidecar | Exact Content-Length and MD5; a local SHA-256 receipt is saved after verification |
 | Wikipedia | Parse ZIM links from the configured directory listing | Parse exact trailing byte counts; missing/unrecognized sizes become `None` |
 | Survivor Library | Find same-site `library-*` category pages, then their ZIP links | Sizes remain `None` until transfer; rounded MB labels are not treated as exact byte counts |
 
@@ -198,3 +200,30 @@ This service is currently started manually. Adding automatic Library startup or
 navigation integration requires separate changes to the appliance's playbooks
 and service configuration; adding a Containerfile alone only enables the existing
 build/export scripts to discover the image.
+
+## Routing selection and activation
+
+Routing discovery reads Geofabrik's US overview, accepts only current regional
+HTTPS PBF links on its host, and uses at most four workers to fetch HEAD sizes
+and MD5 sidecars. Files download through the same resumable queue. Verification
+checks an OSMHeader blob signature and MD5, computing a local SHA-256 receipt
+alongside it. This is transfer/header verification, not a full OSM parser.
+
+`routing.Routing` uses the existing `Storage` policy for all paths. Completed
+files get `.osm.pbf.json` receipts. `POST /api/routing` saves or cancels
+`maps/osm/routing-pending.json`; an `flock` serializes requests with boot activation.
+The web application never stops containers or edits the active graph.
+
+Before routing detection, `start_library.yml` checks for a pending request,
+requires the downloader and GraphHopper images, stops GraphHopper, and runs the
+helper from the downloader image without network access. The helper checks free
+space, stages a second copy, verifies SHA-256, removes the graph completion marker,
+then atomically replaces `region.osm.pbf`. Boot then clears the derived cache and
+starts GraphHopper to import. Failed copies or verification preserve the previous
+active file and pending request. CLI failures are shown via `routing-error.txt`.
+`routing-active.json` records the chosen region, not the routing engine's readiness.
+
+The graph cache under `/Library/maps/graph-cache` is owned by the appliance
+playbook. Standalone Compose can use a different cache path and should use the
+manual setup in [ROUTING.md](ROUTING.md). Routing activation requires an updated
+playbook on existing appliances, not just an updated downloader image.

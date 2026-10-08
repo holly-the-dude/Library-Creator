@@ -17,6 +17,8 @@ and no frontend dependencies.
   tokens, action bodies, and errors.
 - [Testing guide](docs/TESTING.md): test coverage, local/container commands, and
   Raspberry Pi acceptance checks.
+- [Routing data sources](docs/ROUTING.md): where to download regional OSM data
+  for GraphHopper; download, select, and activate a region after restart.
 
 The Python modules also include function and class docstrings for IDE help.
 
@@ -25,7 +27,7 @@ The Python modules also include function and class docstrings for IDE help.
 On startup it first checks the Pi's internet connection. While offline, the
 main page displays **"No Internet, its really hard to go on like this"** and
 the container retries every **30 seconds**. Once connected, it automatically
-checks `/Library` filesystem capacity and free space and discovers all three
+checks `/Library` filesystem capacity and free space and discovers all four
 sources independently in the background. It downloads content only when you
 select files and press **Download selected**.
 
@@ -38,6 +40,7 @@ while offline; the local webpage remains accessible.
 | Source | Files offered | Destination on the USB drive |
 | --- | --- | --- |
 | [Project N.O.M.A.D. Maps](https://github.com/Pendia/Project-N.O.M.A.D-Maps) | Regional `.pmtiles` files, resolving Git LFS pointers | `/Library/maps/pmtiles/<filename>.pmtiles` |
+| [Geofabrik US regions](https://download.geofabrik.de/north-america/us.html) | Current regional `.osm.pbf` routing extracts with exact sizes and MD5 checksums | `/Library/maps/osm/<region>-latest.osm.pbf` |
 | [Wikipedia ZIM directory](https://dumps.wikimedia.org/kiwix/zim/wikipedia/) | `.zim` files; search by language and filter latest editions | `/Library/wiki/<filename>.zim` |
 | [Survivor Library](https://www.survivorlibrary.com/index.php/main-category-index/) | Only category ZIP links, discovered by visiting each section | `/Library/library/<ZIP-name>/<PDF paths from archive>` |
 
@@ -45,6 +48,69 @@ For example, `Accounting.ZIP` extracts its PDFs beneath
 `/Library/library/Accounting/`. Other file types inside a ZIP are skipped. The
 downloaded ZIP is removed after successful extraction. Existing destination
 files or category folders are kept and shown as **Already present**.
+
+## Source acknowledgments and availability
+
+### Project N.O.M.A.D. Maps and the open mapping community
+
+Thank you to **Pendia**, **Crosstalk Solutions / Project N.O.M.A.D.**,
+**Protomaps**, and **OpenStreetMap contributors** for the work that makes these
+offline maps possible. Preparing regional files and sharing the tools and map
+data makes a practical difference for small offline libraries like this one.
+
+The maps are publicly available through
+[Project N.O.M.A.D. Maps on GitHub](https://github.com/Pendia/Project-N.O.M.A.D-Maps).
+Their reuse comes from the published licenses, rather than GitHub hosting alone:
+the repository specifies MIT unless otherwise noted, identifies its PMTiles as
+Open Database License Produced Works, and lists separate font and icon licenses.
+See the [upstream license notes](https://github.com/Pendia/Project-N.O.M.A.D-Maps#license)
+and [Protomaps attribution guidance](https://docs.protomaps.com/basemaps/downloads).
+Keep the applicable notices and OpenStreetMap attribution with the content.
+
+Hosting, download URLs, available files, and terms for future releases can change.
+Check the upstream notices for the version you use; this downloader does not
+guarantee that these sources will remain available.
+
+### Survivor Library and Rocky
+
+A special thank-you to **Rocky**, who runs
+[Survivor Library](https://www.survivorlibrary.com/), for preserving and organizing
+so much practical knowledge and making those collections accessible.
+
+From the Library-Creator maintainer: years ago, I gave Rocky an alpha version of
+what I was building, and he was okay with the project. I appreciate his support
+and the years of work behind Survivor Library. This is the history of our
+conversation, rather than a blanket license for every document in the collection.
+
+When a **full Library kit** is purchased, a small portion of the proceeds **may
+be donated to Survivor Library** to support that work. This is discretionary;
+there is no fixed amount or percentage promised for each purchase.
+
+## Routing data downloads
+
+For driving directions, [Geofabrik](https://download.geofabrik.de/) supplies
+regional OpenStreetMap `.osm.pbf` extracts. GraphHopper imports those files to
+build a local routing graph; PMTiles supply the displayed map. See
+[routing sources and the Library file layout](docs/ROUTING.md), including a
+Georgia example.
+
+In **Routing**, download a region, then press **Use after restart** beside the
+verified file. This queues a choice without changing the running routing service.
+Use **Cancel region change** to withdraw it, or choose another downloaded region.
+After downloads finish, shut down and restart the Library. Startup stops
+GraphHopper, verifies and copies the chosen extract to `maps/osm/region.osm.pbf`,
+and rebuilds the graph. One region is active at a time. A PMTiles layer selection
+does not switch routing regions.
+
+Allow room for the named download, a second active copy, and the generated graph.
+Large extracts may exceed a small Pi's RAM during import. The UI initially offers
+US regional extracts; worldwide manual sources remain listed in the routing guide.
+
+**Deployment:** rebuild/recreate `data_download` and deploy the updated
+`start_library.yml` to `/root/start_library.yml` as well. The
+`localhost/library_maps-graphhopper:11` image must be installed. The downloader
+container alone cannot activate a region; standalone Compose users should follow
+the manual routing setup guide. No Podman socket or privileged mode is added.
 
 ## Build and run on the Raspberry Pi
 
@@ -111,13 +177,15 @@ the playbook recreates the named downloader with the correct mapping.
 1. Give the **Pi** internet access, then open `http://<pi-ip>:4826`.
 2. Check the drive capacity and free space. Each source reports its own status;
    Survivor Library takes longer because every category page must be checked.
-3. Pick Maps, Wikipedia, or Survivor Library. Search and select files (up to
+3. Pick Maps, Routing, Wikipedia, or Survivor Library. Search and select files (up to
    100 per request). Wikipedia initially shows the latest date for each variant;
    uncheck **Latest editions only** to see older snapshots.
 4. Press **Download selected**. The queue shows download and extraction progress,
    errors, cancellation, and retry controls. Closing the browser is fine.
 5. Use **Refresh sources** to retry unreachable sources or retrieve new listings.
-6. After the queue finishes with successful downloads, a popup reminds you to
+6. For routing files, select **Use after restart** in the Routing tab after the
+   download is complete. The choice is saved on the USB drive.
+7. After the queue finishes with successful downloads, a popup reminds you to
    **shut down and restart the Library** so the new files become available. Use
    the Library's Shutdown option, wait for shutdown to finish, then start it again.
    The reminder waits until downloads and extraction are idle, and appears once
@@ -139,6 +207,9 @@ Library LAN, as other clients on that LAN can manage this shared queue.
   The **Fits available space** filter hides unknown-size archives. Extraction
   checks the ZIP's expanded PDF sizes against the remaining space, while the
   compressed ZIP is still on disk. If space runs out, no final category is published.
+- Routing downloads check the OSM PBF header, byte count, and upstream MD5. A
+  local SHA-256 receipt is saved and checked again before startup activation.
+  MD5 detects transfer mismatches; it is not a signature or full OSM semantic validation.
 - Map downloads check the LFS SHA-256, byte count, and PMTiles header. ZIM downloads
   check the listed byte count and ZIM header (not a full ZIM checksum). PDFs are
   checked against the ZIP CRC while extracting. ZIP paths, symlinks, duplicates,

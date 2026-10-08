@@ -1,7 +1,7 @@
 """Discover downloadable Library content and probe source-host connectivity.
 
 This module is imported by app.py, not run as a command. It uses HTTPS and
-standard-library HTML/JSON parsers to normalize PMTiles, ZIM, and category ZIP
+standard-library HTML/JSON parsers to normalize PMTiles, OSM PBF, ZIM, and category ZIP
 metadata into catalog dictionaries. Discovery fetches listings and small Git
 LFS pointers, never full content archives. See docs/DEVELOPMENT.md for the
 source-specific assumptions and docs/API.md for the catalog row schema.
@@ -20,13 +20,15 @@ from urllib.request import Request, urlopen
 MAPS_REPO = "Pendia/Project-N.O.M.A.D-Maps"
 MAPS_API = f"https://api.github.com/repos/{MAPS_REPO}/contents/pmtiles"
 WIKI_URL = "https://dumps.wikimedia.org/kiwix/zim/wikipedia/"
+ROUTING_URL = "https://download.geofabrik.de/north-america/us.html"
 SURVIVOR_URL = "https://www.survivorlibrary.com/index.php/main-category-index/"
 SOURCES = {
     "maps": {"name": "Regional maps", "url": f"https://github.com/{MAPS_REPO}"},
+    "routing": {"name": "Routing · US regions", "url": ROUTING_URL},
     "wiki": {"name": "Wikipedia", "url": WIKI_URL},
     "survivor": {"name": "Survivor Library", "url": SURVIVOR_URL},
 }
-DESTINATIONS = {"maps": "maps/pmtiles", "wiki": "wiki", "survivor": "library"}
+DESTINATIONS = {"routing": "maps/osm", "maps": "maps/pmtiles", "wiki": "wiki", "survivor": "library"}
 USER_AGENT = "Library-Data-Download/1.0"
 
 
@@ -39,7 +41,7 @@ def internet_available():
     heuristic, not proof that every catalog or individual file is available.
     """
     for url in ("https://github.com/", "https://dumps.wikimedia.org/",
-                "https://www.survivorlibrary.com/"):
+                "https://www.survivorlibrary.com/", "https://download.geofabrik.de/"):
         request = Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
         try:
             with urlopen(request, timeout=5) as response:
@@ -196,11 +198,39 @@ def map_item(entry):
     return item("maps", url, size, sha256=digest)
 
 
+def routing_links(html):
+    """Return only current US regional PBF URLs on Geofabrik's HTTPS host."""
+    urls = set()
+    for link in Links(html).links:
+        parsed = urlsplit(urljoin(ROUTING_URL, link["href"]))
+        if (parsed.scheme == "https" and parsed.netloc == "download.geofabrik.de"
+                and not parsed.query and not parsed.fragment
+                and re.fullmatch(r"/north-america/us/[a-z][a-z-]*-latest\.osm\.pbf", parsed.path)):
+            urls.add(parsed.geturl())
+    return sorted(urls)
+
+
+def routing_item(url):
+    """Read exact byte length and upstream MD5 without downloading the PBF."""
+    request = Request(url, method="HEAD", headers={"User-Agent": USER_AGENT})
+    with urlopen(request, timeout=30) as response:
+        size = int(response.headers["Content-Length"])
+    if size <= 0:
+        raise ValueError("Invalid routing file size")
+    checksum = fetch(url + ".md5", limit=1024).split()
+    if not checksum or not re.fullmatch(r"[a-fA-F0-9]{32}", checksum[0]):
+        raise ValueError("Invalid routing MD5 metadata")
+    title = PurePosixPath(urlsplit(url).path).name.removesuffix("-latest.osm.pbf").replace("-", " ").title()
+    row = item("routing", url, size, title=title + " · routing")
+    row["md5"] = checksum[0].lower()
+    return row
+
+
 def discover(source, publish):
     """Fetch a source catalog and pass each available row batch to publish.
 
     Args:
-        source: One of maps, wiki, or survivor, supplied by Application.
+        source: One of maps, routing, wiki, or survivor, supplied by Application.
         publish: Callback receiving a list of dictionaries from item().
 
     Return an empty string on success or a warning for failed child listings.
@@ -223,12 +253,19 @@ def discover(source, publish):
         if not work:
             raise ValueError("No PMTiles found in the repository")
         fn = lambda entry: [map_item(entry)]
-    else:
+    elif source == "routing":
+        work = routing_links(fetch(ROUTING_URL))
+        if not work:
+            raise ValueError("No US regional routing extracts found")
+        fn = lambda url: [routing_item(url)]
+    elif source == "survivor":
         categories = category_links(fetch(SURVIVOR_URL))
         if not categories:
             raise ValueError("No Survivor Library categories found")
         work = list(categories.items())
         fn = lambda pair: parse_survivor(fetch(pair[0]), pair[0], pair[1])
+    else:
+        raise ValueError("Unknown source")
     with ThreadPoolExecutor(max_workers=4) as pool:
         pending = [pool.submit(fn, entry) for entry in work]
         for future in as_completed(pending):

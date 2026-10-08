@@ -40,7 +40,7 @@ read-only mount is required. The image working directory makes `app` and
 | --- | --- |
 | `DiscoveryTests` | Connectivity fallback, all-host failure, HTTP rate limits, captive-portal redirects, exact ZIM sizes, category filtering, malformed ZIP anchors, LFS metadata, unsafe filenames |
 | `StorageTests` | Mount/root checks, symlinks/traversal, free-space reserve, successful transfers, Range/If-Range resume, ignored/invalid ranges, complete ZIP reuse, truncated transfers, checksum/format rejection, cancellation |
-| `StorageTests` | PDF-only extraction, unsafe ZIP entries, expanded-space checks, preservation of existing categories, CRC failure cleanup, source isolation/cache reload, duplicate queue submissions, publication of all three content types |
+| `StorageTests` | PDF-only extraction, unsafe ZIP entries, expanded-space checks, preservation of existing categories, CRC failure cleanup, source isolation/cache reload, duplicate queue submissions, publication of all four content types |
 | `StorageTests` | Offline startup before storage/discovery, exact offline text, reconnection refresh, 30-second timing, and manual refresh gating |
 | `HTTPTests` | Static/API GET routes and headers, continued responses with a broken access-log pipe, token enforcement, and rejection of download requests outside the accepted workflow |
 
@@ -111,3 +111,29 @@ The automated suite does not prove browser rendering, mobile layout, USB unplug
 behavior, all USB filesystem semantics, power-loss recovery, or compatibility
 with every Pi image. The ARM64 image has been built and tested; use the manual
 checks on the target Pi and drive before relying on a deployment.
+
+## Routing checks
+
+`tests/test_routing.py` covers safe catalog links, exact metadata, PBF signatures,
+MD5/SHA-256 failures, interrupted hashing, persistent/cancellable selection,
+space failures, atomic activation, cache invalidation, and symlink/path rejection.
+HTTP tests cover the selection token and invalid-file responses; the download
+worker test publishes all four content types and a verified routing receipt.
+
+For a Pi acceptance test, install the updated downloader image and startup
+playbook plus GraphHopper. Download a small region, select **Use after restart**,
+and verify existing directions are unchanged before shutdown. Restart and watch
+GraphHopper import; confirm routes inside the chosen region. The active file is
+`/Library/maps/osm/region.osm.pbf`; the named download remains available to select
+again. Selecting another region replaces the active region on a later startup.
+
+The boot handoff has separate Ansible integration tests using fake Podman commands:
+
+```sh
+# From the repository root; requires Ansible and PyYAML.
+python3 -m unittest discover -s setup_library/tests -p test_routing_startup.py -v
+```
+
+These cover no pending request, stop-before-activation ordering, missing images,
+and activation failure recovery. Live Geofabrik discovery has also been checked
+against the US overview and Georgia's HEAD/MD5 metadata without fetching its PBF.

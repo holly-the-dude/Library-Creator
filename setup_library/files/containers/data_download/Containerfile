@@ -9,7 +9,7 @@ RUN apt-get update && \
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     LIBRARY_ROOT=/Library PORT=4286 REQUIRE_MOUNT=1 MIN_FREE_BYTES=268435456
 WORKDIR /opt/data_download
-COPY app.py sources.py ./
+COPY app.py sources.py routing.py ./
 COPY static/ ./static/
 EXPOSE 4286
 ENTRYPOINT ["python3", "/opt/data_download/app.py"]
