@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Library Data Download</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><div class="wrap topbar"><a id="home" href="/">LIBRARY <span>Content manager</span></a><span class="badge">Data Download · 4286</span></div></header>
+  <main class="wrap">
+    <section id="internet-status" class="panel" role="status" aria-live="polite"><h2 id="internet-message">Checking internet connection…</h2><p id="internet-detail">Waiting for the Pi to connect before checking the drive and download sources.</p></section>
+    <div class="heading"><div><p class="eyebrow">BUILD YOUR OFFLINE LIBRARY</p><h1>Bring knowledge with you.</h1><p>Choose maps, Wikipedia editions, and PDF collections to save to your Library drive.</p></div><button id="refresh" class="secondary">Refresh sources</button></div>
+    <section class="panel storage" aria-labelledby="storage-title">
+      <div><h2 id="storage-title">Library USB drive</h2><p id="storage-text">Checking /Library…</p></div>
+      <div class="meter"><progress id="storage-meter" max="100" value="0" aria-label="Storage used"></progress><p id="storage-detail"></p></div>
+    </section>
+    <div id="notice" role="alert" hidden></div>
+    <section class="sources" id="sources" aria-label="Download sources"></section>
+    <section class="panel" aria-labelledby="catalog-title">
+      <div class="section-heading"><div><h2 id="catalog-title">Available downloads</h2><p id="destination">Maps save to /Library/maps/pmtiles</p></div><span id="count" class="badge">Checking sources…</span></div>
+      <div class="tabs" role="group" aria-label="Content type"><button data-source="maps" aria-pressed="true">Maps</button><button data-source="wiki" aria-pressed="false">Wikipedia</button><button data-source="survivor" aria-pressed="false">Survivor Library</button></div>
+      <div class="filters"><label class="search">Search files<input id="search" type="search" placeholder="Search a region, language code, or category"></label><label><input id="fits" type="checkbox"> Fits available space</label><label id="latest-label" hidden><input id="latest" type="checkbox" checked> Latest editions only</label></div>
+      <p class="hint" id="source-hint">Select regional PMTiles files for offline maps.</p>
+      <div class="table-scroll"><table><thead><tr><th scope="col"><input id="select-page" type="checkbox" aria-label="Select eligible files on this page"></th><th scope="col">File / collection</th><th scope="col">Download size</th><th scope="col">Status</th></tr></thead><tbody id="files"></tbody></table></div>
+      <div class="pager"><button id="previous" class="secondary">Previous</button><span id="page"></span><button id="next" class="secondary">Next</button></div>
+      <div class="selection"><div><strong id="selected">No files selected</strong><p>Downloads run one at a time. You can close this page while they continue.</p></div><button id="download" disabled>Download selected</button></div>
+    </section>
+    <section class="panel" aria-labelledby="queue-title"><div class="section-heading"><h2 id="queue-title">Download queue</h2><span id="queue-count" class="badge">0 active</span></div><div id="jobs"><p>No downloads queued yet.</p></div></section>
+    <footer>Internet access is needed on the Pi to discover and download files. Saved content stays on your USB drive.<br>Keep the drive connected while downloads or extraction are running.</footer>
+  </main>
+  <dialog id="restart-reminder" aria-labelledby="restart-title" aria-describedby="restart-message">
+    <h2 id="restart-title">Restart the Library to use your new files</h2>
+    <p id="restart-message">New files have been downloaded. Please shut down the Library using its Shutdown option, then start it again so the new files become available.</p>
+    <p>Wait for shutdown to finish before turning the Library back on.</p>
+    <form method="dialog"><button autofocus>OK, I'll restart later</button></form>
+  </dialog>
+</body>
+</html>

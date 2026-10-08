@@ -6,6 +6,11 @@ container build pipeline, the three-stage install, and how to add or modify serv
 If you just want to build a device, read [INSTALL.md](INSTALL.md). If you want to use a
 running device, read [USAGE.md](USAGE.md).
 
+For the optional `data_download` service, see its
+[Python development guide](../setup_library/files/containers/data_download/docs/DEVELOPMENT.md),
+[HTTP API reference](../setup_library/files/containers/data_download/docs/API.md),
+and [testing guide](../setup_library/files/containers/data_download/docs/TESTING.md).
+
 ---
 
 ## What the project is
@@ -87,6 +92,7 @@ for discovery, port mapping and deployment.
 | Maps routing (GraphHopper) | 10.88.0.213 | 8989 | internal, via maps `/api/route` |
 | Meshtastic bridge | 10.88.0.214 | 8086 | `http://library:8086` |
 | meshflash setup (alternative to bridge) | 10.88.0.214 | 8086 | `http://library:8086` |
+| Data Download (optional image) | 10.88.0.215 | 4286 | `http://10.1.1.1:4826` |
 | Shutdown endpoint | — | 9999 | internal |
 
 ---
@@ -225,6 +231,15 @@ At runtime, `start_library.service` runs `/root/start_library.yml`, copied from
 `03_start_containers.yml` is an older separate startup path. The runtime playbook
 handles storage, cloning, hotspot, content services, maps/GPS, and radio service
 selection. It reports progress with the host's `displayit` splash helper.
+
+The startup unit uses `Type=oneshot` with `RemainAfterExit=yes`: Ansible completes,
+but systemd must retain the unit and its detached container log monitors (`conmon`).
+`TimeoutStartSec=0` permits waiting for USB insertion and long imports. A plain
+`Type=simple` unit without `RemainAfterExit` cleans up those monitors when the
+playbook exits, which can break container logging and HTTP responses. See the
+[systemd service documentation](https://github.com/systemd/systemd/blob/main/man/systemd.service.xml).
+Deploy changes to `/etc/systemd/system/start_library.service` and run
+`systemctl daemon-reload`; damaged running containers need recreation separately.
 
 For the complete menu-by-menu and stage-by-stage reference, see
 [`bootstrap.md`](../bootstrap.md).

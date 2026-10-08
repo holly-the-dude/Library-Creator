@@ -71,6 +71,16 @@ services:
     check_text: '<html'
     timeout: 5
 
+  - name: data_download
+    display_name: Downloads
+    internal_ip: 10.1.1.1
+    internal_port: 4826
+    external_url: http://10.1.1.1:4826
+    # Local health stays available while the downloader waits for internet.
+    check_path: /api/health
+    check_text: '"status": "ok"'
+    timeout: 5
+
 # -----------------------------------------------------------------------------
 # Container Definitions
 # Used by the bootstrap/setup scripts to create and manage containers.
@@ -114,3 +124,9 @@ containers:
 
   # Radio containers are created by start_library.yml after USB discovery.
   # Their device mapping and choice of meshtastic/meshflash are dynamic.
+
+  - name: data_download
+    ports: '4826:4286'
+    ip: 10.88.0.215
+    drive_map: '/Library:/Library:rw'
+    command: ''

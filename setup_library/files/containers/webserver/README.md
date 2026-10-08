@@ -119,6 +119,28 @@ including the required match between published and listening ports.
 Rebuild and recreate the webserver after updating its bundled configuration so
 existing installations use this shared-port check.
 
+### Downloads navigation
+
+The **Downloads** tab follows Meshtastic and precedes Shutdown. It links to
+**http://10.1.1.1:4826** and checks `/api/health` on that published host port.
+The check succeeds even while the downloader is waiting for internet, so users
+can reach its offline status screen. If the service is unavailable, its link is
+omitted, like the other service links.
+
+The startup playbook starts the installed `localhost/data_download:latest` image
+before generating the homepage, with `/Library:/Library` and `4826:4286` port
+publication. See the [downloader setup instructions](../data_download/README.md).
+Rebuild/recreate this webserver and deploy the updated startup playbook on existing
+installations. `library.py` regenerates navigation on its next run when available
+services change, even if the library file count has stayed the same. It does not
+poll services continuously; start the downloader before running the generator.
+
+Run the offline navigation regression checks from the repository root:
+
+```sh
+python3 -m unittest discover -s setup_library/tests -p test_download_navigation.py -v
+```
+
 ### `containers` — Container definitions
 
 Records static container metadata for setup scripts. This section does not itself
@@ -184,6 +206,7 @@ podman run -d --name webserver --ip 10.88.0.201 -p 80:80 -v /Library:/library lo
 | Port | Service |
 |------|---------|
 | 80   | nginx (main web interface) |
+| 4826 | Downloads (separate container; forwards to internal port 4286) |
 | 9999 | Shutdown CGI endpoint |
 
 ## Network

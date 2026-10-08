@@ -59,6 +59,32 @@ Wikipedia snapshot was loaded onto the device.
 
 ---
 
+## Downloading content onto the Library USB drive
+
+When the optional `data_download` image is installed, Library startup launches it.
+Select **Downloads** between **Meshtastic** and **Shutdown**, or open
+**http://library:4826** or **http://10.1.1.1:4826**. This setup tool needs an
+internet connection on the Pi; reading downloaded content remains offline.
+See the [Data Download setup guide](../setup_library/files/containers/data_download/README.md)
+for building and starting the container on your Raspberry Pi.
+
+The page shows USB capacity and free space, plus availability of each source.
+Choose files under Maps, Wikipedia, or Survivor Library and press **Download
+selected**. You can search the list, filter files that fit, and watch or cancel
+downloads in the queue. Downloads continue if you close the browser.
+
+- Maps are saved to `/Library/maps/pmtiles`.
+- Wikipedia ZIMs are saved to `/Library/wiki`.
+- Survivor Library offers category ZIPs only. Their PDFs are extracted to
+  category folders under `/Library/library`, then the ZIPs are removed.
+
+Existing files are kept. Interrupted downloads can be retried, and the tool
+checks space again before downloading and extracting. New content may need a
+reader refresh or index update; follow the
+[reader instructions](../setup_library/files/containers/data_download/README.md#making-downloaded-content-visible).
+
+---
+
 ## Using the Music player
 
 - Click **Music** on the home page. When opened through the home page, you're logged in

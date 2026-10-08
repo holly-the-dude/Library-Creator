@@ -1,0 +1,15 @@
+ARG BASE_IMAGE=localhost/rasbase_master:latest
+FROM ${BASE_IMAGE}
+
+LABEL description="Library content downloader for PMTiles, Wikipedia ZIMs and Survivor Library PDFs"
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends python3 ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
+    LIBRARY_ROOT=/Library PORT=4286 REQUIRE_MOUNT=1 MIN_FREE_BYTES=268435456
+WORKDIR /opt/data_download
+COPY app.py sources.py ./
+COPY static/ ./static/
+EXPOSE 4286
+ENTRYPOINT ["python3", "/opt/data_download/app.py"]

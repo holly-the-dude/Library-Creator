@@ -27,8 +27,9 @@ services:
       GPS_PORT: "${GPS_PORT:-/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_7_-_GPS_GNSS_Receiver-if00}"
       GPS_BAUD: "${GPS_BAUD:-9600}"
     volumes:
-      # PMTiles + basemaps-assets + styles, exactly as the standalone container.
-      - "${MAPS_DIR:-/Library/maps}:/storage/maps:ro,Z"
+      # Writable so startup can seed missing fonts/sprites. Shared SELinux label:
+      # the downloader and routing container also use this drive's contents.
+      - "${MAPS_DIR:-/Library/maps}:/storage/maps:rw,z"
 
   graphhopper:
     image: localhost/library_maps-graphhopper:11

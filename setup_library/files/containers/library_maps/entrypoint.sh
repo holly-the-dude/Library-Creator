@@ -5,6 +5,10 @@ echo "=== library_maps starting ==="
 echo "PMTiles version: $(pmtiles version)"
 echo "Map storage: /storage/maps"
 
+# A listed PMTiles file still needs fonts and sprites to render. Fill gaps in
+# the mounted drive from the image before nginx accepts browser requests.
+python3 /usr/local/lib/library_maps/ensure_map_assets.py
+
 # List available .pmtiles files
 PMTILES_DIR="/storage/maps/pmtiles"
 if [ -d "$PMTILES_DIR" ] && [ "$(ls -A $PMTILES_DIR/*.pmtiles 2>/dev/null)" ]; then

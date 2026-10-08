@@ -1,0 +1,27 @@
+services:
+  data_download:
+    image: localhost/data_download:latest
+    container_name: data_download
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-localhost/rasbase_master:latest}"
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:4826:4286"
+    environment:
+      REQUIRE_MOUNT: "1"
+      MIN_FREE_BYTES: "${MIN_FREE_BYTES:-268435456}"
+    # Runtime healthcheck also works with Podman's default OCI image format.
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4286/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+    volumes:
+      - type: bind
+        source: /Library
+        target: /Library
+        bind:
+          create_host_path: false

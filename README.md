@@ -56,6 +56,7 @@ Additional reference:
   [music](setup_library/files/containers/music/README.md),
   [calibre-web](setup_library/files/containers/calibre-web/README.md),
   [library_maps](setup_library/files/containers/library_maps/README.md),
+  [data_download](setup_library/files/containers/data_download/README.md),
   [meshtastic](setup_library/files/containers/meshtastic/README.md),
   [meshflash](setup_library/files/containers/meshflash/README.md).
 - [Display role](setup_library/roles/update_display/README.md) - the legacy HTTP status-message helper.
@@ -75,6 +76,7 @@ Additional reference:
 | <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
 | <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
 | [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
+| [Data Download](setup_library/files/containers/data_download/README.md) | Download maps, Wikipedia ZIMs, and Survivor Library PDF collections to USB | `http://library:4826` / `http://10.1.1.1:4826` |
 | <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
 
 ---
@@ -101,6 +103,36 @@ for connecting, sending messages, checking nodes, and setting up a new radio.
 
 ---
 
+## Downloading content
+
+Select **Downloads** on the home page, after **Meshtastic** and before
+**Shutdown**, or open **http://10.1.1.1:4826**. When the `data_download` image is
+installed, Library startup launches it automatically before the webserver.
+
+The downloader checks the USB drive's available space and lets you choose:
+
+- Regional PMTiles maps → `/Library/maps/pmtiles/`
+- Wikipedia ZIM files → `/Library/wiki/`
+- Survivor Library category ZIP collections, extracted as PDFs → `/Library/library/`
+
+The Pi needs internet access to discover and download new content. While offline,
+the page displays **"No Internet, its really hard to go on like this"** and checks
+again every **30 seconds**. Reading previously downloaded content works offline.
+After downloads finish, a popup reminds you to **shut down and restart the Library**
+so the new files become available in its readers.
+
+The maps container bundles its required fonts and sprites and copies missing files
+onto the USB drive at startup, preserving existing files. See
+[automatic map asset setup](setup_library/files/containers/library_maps/README.md#automatic-font-and-sprite-setup).
+
+See the [downloader setup guide](setup_library/files/containers/data_download/README.md)
+for building, deployment, Python/API documentation, and troubleshooting. Existing
+installations also need the corrected `start_library.service` so container log
+monitors survive the end of startup; see the
+[empty-response repair notes](setup_library/files/containers/data_download/README.md#if-the-container-runs-but-the-browser-gets-an-empty-reply).
+
+---
+
 ## How it works (in one picture)
 
 ```
@@ -112,7 +144,8 @@ for connecting, sending messages, checking nodes, and setting up a new radio.
                                              ├─ calibre   10.88.0.211:8083
                                              ├─ maps                :8080
                                              ├─ graphhopper 10.88.0.213:8989 (routing)
-                                             └─ meshtastic OR meshflash :8086 ⇦ USB radio
+                                             ├─ meshtastic OR meshflash :8086 ⇦ USB radio
+                                             └─ data_download :4826 → container :4286
                                         content ⇦ USB drive mounted at /Library
 ```
 
@@ -149,7 +182,7 @@ requirements are in the [Installation Guide](docs/INSTALL.md).
 - An optional TFT or HDMI display for boot status
 - For mesh messaging: a USB Meshtastic radio, suitable antenna, and USB data cable
 - For offline firmware installation: an ESP32-family radio supported by meshflash
-- Internet **during installation only**
+- Internet during installation and when downloading new content; browsing stored content works offline
 
 
 ---

@@ -4,6 +4,42 @@ A lightweight PMTiles map tile server for Raspberry Pi, based on `rasbase_master
 
 Serves `.pmtiles` files via nginx with HTTP range request support. Includes a built-in MapLibre GL JS viewer with a state selector, in-tile place/street search, a map-layer on/off panel, and optional car routing (turn-by-turn directions) via a bundled GraphHopper service. It is fully offline: no geocoder/Photon and no internet/CDN access are required at runtime.
 
+## Automatic font and sprite setup
+
+The image bundles the working Library map fonts and version 4 light sprites.
+Before starting nginx, `ensure_map_assets.py` checks the mounted
+`/storage/maps/basemaps-assets/` and copies each missing file from the seed at
+`/opt/library_maps/basemaps-assets/`. With the normal bind mount, this populates
+`/Library/maps/basemaps-assets/` on the USB drive automatically.
+
+The build verifies the bundled files against `basemaps-assets/SHA256SUMS`.
+No asset download is needed at startup. Existing files and custom additions
+are preserved, and partially populated folders are repaired file by file.
+Copies use temporary files and rename so interrupted writes can be retried on
+the next start. Logs report how many files were copied and preserved.
+
+Mount `/Library/maps` **read-write** when assets need installation; Compose now
+does this by default. A fully populated read-only mount still works, but a
+missing file on a read-only/full/unwritable drive stops startup with an explicit
+error. Existing empty/corrupt files are not automatically replaced. The helper
+also refuses symlink destinations and file/directory conflicts.
+
+The seed contains Noto Sans Regular/Medium/Italic glyph ranges from the working
+USB, the 1x/2x light sprites, and upstream license notices. It is not a complete
+worldwide font pack; additional glyph ranges can be installed beside it. See
+[asset provenance and licenses](basemaps-assets/README.md). PMTiles and routing
+data remain on the USB and are not bundled into the image.
+
+After updating an existing installation, **rebuild and recreate** the maps
+container to use the new entrypoint and seed. Restarting an old image alone will
+not add this feature. New containers check on every start, including offline boots.
+
+Helper regression checks (no network or USB required):
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_map_assets.py' -v
+```
+
 ## Two ways to run
 
 ### A) Viewer only (no routing)
@@ -143,7 +179,7 @@ Mount a directory to `/storage/maps` with this structure:
 │   ├── alabama_2025-12.pmtiles
 │   ├── oregon_2025-12.pmtiles
 │   └── ...
-├── basemaps-assets/            # Fonts and sprites (optional, for offline use)
+├── basemaps-assets/            # Required fonts/sprites for Protomaps state maps
 │   ├── fonts/
 │   └── sprites/
 └── styles/                     # Map style JSON files (optional)
@@ -171,6 +207,44 @@ podman logs -f library_maps
 | `http://<ip>:8080/api/gps` | Live serial GPS status and last accepted position (JSON, no cache) |
 
 ## Downloading State Maps
+
+### Map appears in the dropdown but the display is blank
+
+The dropdown only confirms that a `.pmtiles` file exists. Protomaps state maps
+also need the fonts and sprites at these host paths:
+
+```text
+/Library/maps/basemaps-assets/fonts/Noto Sans Regular/0-255.pbf
+/Library/maps/basemaps-assets/sprites/v4/light.json
+/Library/maps/basemaps-assets/sprites/v4/light.png
+```
+
+Keep all supplied font ranges, font families, and the `light@2x` sprite files,
+not just these examples. Folders at `/Library/maps/fonts` and
+`/Library/maps/sprites` are one level too high for the viewer's URLs. If an asset
+archive was unpacked there, copy the existing folders into the expected location
+on the Pi (without replacing files already present):
+
+```sh
+sudo mkdir -p /Library/maps/basemaps-assets
+sudo cp -an /Library/maps/fonts /Library/maps/sprites /Library/maps/basemaps-assets/
+curl -fI http://127.0.0.1:8080/basemaps-assets/sprites/v4/light.json
+curl -fI http://127.0.0.1:8080/basemaps-assets/fonts/Noto%20Sans%20Regular/0-255.pbf
+```
+
+New images automatically populate these paths on startup. The manual copy above
+is useful for older images or existing customized assets. Both requests should
+return HTTP 200. Reload the browser page after correcting
+the folders; these mounted asset changes do not require a container rebuild or
+restart. Use a hard refresh if the browser retained failed asset requests.
+Natural Earth's roads-only map does not use these assets, so it can work while
+Protomaps state maps fail. To check a downloaded archive separately:
+
+```sh
+sudo podman exec library_maps pmtiles verify /storage/maps/pmtiles/georgia_2025-12.pmtiles
+```
+
+### State download script
 
 The `download_states.sh` script downloads pre-built PMTiles from [project-nomad-maps](https://github.com/Crosstalk-Solutions/project-nomad-maps). All 50 US states are available:
 
@@ -228,7 +302,7 @@ The `build_state_pmtiles.sh` script can generate PMTiles from Geofabrik OSM extr
 ## Notes
 
 - The viewer is fully offline: MapLibre GL JS, PMTiles JS, and the Protomaps basemaps JS are vendored into the image at `/var/www/html/vendor/`, and map fonts (glyphs) + sprites are served from `/storage/maps/basemaps-assets/`. No internet or CDN access is needed by clients. This matters because clients on the offline hotspot network cannot reach the public internet.
-- If you add new state files or rebuild, ensure `/storage/maps/basemaps-assets/` contains `sprites/v4/light.*` and `fonts/Noto Sans {Regular,Medium,Italic}/*.pbf` (mirror from `https://protomaps.github.io/basemaps-assets/`)
+- Startup fills missing `sprites/v4/light.*` and bundled `fonts/Noto Sans {Regular,Medium,Italic}/*.pbf` files under `/storage/maps/basemaps-assets/` from the image. Additional font ranges can be installed from the upstream Protomaps assets as needed.
 - The `.pmtiles` tile data itself is served entirely offline from the local volume
 - Files use the naming convention `statename_2025-12.pmtiles`
 - On systems where `curl` prefers IPv6, use `127.0.0.1` instead of `localhost` to access the container

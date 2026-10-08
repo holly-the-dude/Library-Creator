@@ -44,6 +44,11 @@ COPY index.html /var/www/html/index.html
 COPY gps-control.js gps-control.css /var/www/html/
 # Keep the service beside its parser for Python imports, outside the web root.
 COPY read_gps.py gps_service.py /usr/local/lib/library_maps/
+# Keep bundled fonts/sprites outside the mount, then fill missing USB assets at
+# startup. Vendored files allow offline builds after the base/dependencies exist.
+COPY basemaps-assets/ /opt/library_maps/basemaps-assets/
+RUN cd /opt/library_maps/basemaps-assets && sha256sum -c SHA256SUMS
+COPY ensure_map_assets.py /usr/local/lib/library_maps/
 # Vendored map libraries so the client needs no internet/CDN access.
 # Clients on the offline hotspot network cannot reach unpkg.com, so these
 # must be served locally. See vendor/ for the pinned library versions.

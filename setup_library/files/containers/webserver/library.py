@@ -199,7 +199,7 @@ def has_file_count_changed(library_path, web_path):
             previous_file_count = None
 
     if previous_file_count is not None and current_file_count == previous_file_count:
-        print("File count has not changed. Skipping HTML generation.")
+        print("File count has not changed.")
         return False
 
     print("File count has changed. Generating new HTML files.")
@@ -445,13 +445,20 @@ def main():
     nav_links = "\n        ".join(active_services)
     print(f"\nActive services: {len(active_services)}/{len(services_config)}")
 
-    # --- Check if HTML regeneration is needed ---
-    if not has_file_count_changed(library_path, web_path):
-        return
-
     # --- Build the HTML template with nav bar ---
     shutdown_url = f"http://{host_ip}:{shutdown_port}"
     html_template = get_html_template(nav_links, shutdown_url)
+
+    # Service availability can change without adding/removing library files.
+    # Compare the generated header so new navigation also reaches cached pages.
+    expected_header = html_template.split(TREE_CONTENT_PLACEHOLDER, 1)[0]
+    try:
+        with open(os.path.join(web_path, "index.html"), "r") as f:
+            navigation_changed = not f.read().startswith(expected_header)
+    except OSError:
+        navigation_changed = True
+    if not has_file_count_changed(library_path, web_path) and not navigation_changed:
+        return
 
     # --- Generate HTML pages ---
     print("\nGenerating HTML pages...")

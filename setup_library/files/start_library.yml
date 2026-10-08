@@ -48,6 +48,7 @@
 #   meshtastic     10.88.0.214  :8086   (detected USB Meshtastic radio + bridge)
 #   meshflash      10.88.0.214  :8086   (setup TUI when no radio responds;
 #                                        mutually exclusive with meshtastic)
+#   data_download  10.88.0.215  :4826 -> container 4286 (when image installed)
 #
 # NOTE ON MODULE NAMES
 #   All task modules use Fully Qualified Collection Names (FQCN), e.g.
@@ -1167,6 +1168,53 @@
                 displayit started_ebook.jpg
                 sleep 2
               become: true
+
+    ###############################
+    # DATA DOWNLOAD — start before the webserver discovers navigation links.
+    # Older installations without this optional image continue to boot.
+    ###############################
+    - name: start data downloader when installed
+      tags: [data_download]
+      become: true
+      block:
+        - name: check for data downloader image
+          ansible.builtin.command: podman image exists localhost/data_download:latest
+          register: data_download_image
+          changed_when: false
+          failed_when: data_download_image.rc not in [0, 1]
+
+        - name: start installed data downloader
+          when: data_download_image.rc == 0
+          block:
+            - name: confirm Library USB is mounted before starting downloader
+              ansible.builtin.command: mountpoint -q /Library
+              changed_when: false
+
+            - name: run data downloader
+              ansible.builtin.command:
+                argv:
+                  - podman
+                  - run
+                  - -d
+                  - --name=data_download
+                  - --replace
+                  - --restart=unless-stopped
+                  - --ip=10.88.0.215
+                  - -p
+                  - 0.0.0.0:4826:4286
+                  - --mount
+                  - type=bind,src=/Library,dst=/Library
+                  - localhost/data_download:latest
+
+            - name: wait for downloader local web interface
+              ansible.builtin.uri:
+                url: http://127.0.0.1:4826/api/health
+                return_content: true
+                timeout: 5
+              register: data_download_health
+              until: (data_download_health.json | default({})).get('status') == 'ok'
+              retries: 15
+              delay: 2
 
     ###############################
     # WEBSERVER (main library front-end) — started only if /Library/library
