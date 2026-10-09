@@ -48,6 +48,7 @@ Pick the guide that matches what you're doing:
 
 Additional reference:
 
+- [TODO.md](TODO.md) - planned features and improvements.
 - [`bootstrap.md`](bootstrap.md) - complete reference for the installer script and its three boot stages.
 - Each service has its own README under [`setup_library/files/containers/`](setup_library/files/containers/):
   [hotspot](setup_library/files/containers/hotspot/README.md),
@@ -76,7 +77,7 @@ Additional reference:
 | <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
 | <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
 | [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
-| [Data Download](setup_library/files/containers/data_download/README.md) | Download maps, Wikipedia ZIMs, and Survivor Library PDF collections to USB | `http://library:4826` / `http://10.1.1.1:4826` |
+| [Data Download](setup_library/files/containers/data_download/README.md) | Download maps, routing data, Wikipedia, and Survivor Library collections; upload music, data, and ebooks to USB | `http://library:4826` / `http://10.1.1.1:4826` |
 | <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
 
 ---
@@ -148,6 +149,52 @@ for building, deployment, Python/API documentation, and troubleshooting. Existin
 installations also need the corrected `start_library.service` so container log
 monitors survive the end of startup; see the
 [empty-response repair notes](setup_library/files/containers/data_download/README.md#if-the-container-runs-but-the-browser-gets-an-empty-reply).
+
+### Uploading your own files
+
+Select **Upload files** beside Maps, Routing, Wikipedia, and Survivor Library.
+Choose **Music files**, **Data files**, or **Ebooks**, then select a single file,
+multiple files, or a folder and press **Upload selected**. Local uploads work
+without internet; keep the browser page open and the USB drive connected until
+the upload finishes.
+
+| Upload choice | Destination on the Library |
+| --- | --- |
+| Music files | `/Library/music` |
+| Data files | `/Library/library` |
+| Ebooks | `/Library/calibre/put_new_books_here` |
+
+Folder structure is preserved. Uploaded ZIPs are extracted into the chosen
+destination, preserving paths inside the archive, then removed. Existing files
+are kept; a conflicting filename stops the batch. The page shows upload progress
+and reports any errors.
+
+After music uploads, a popup gives the next steps in the music player:
+**Gear icon on the right → Scanner → Scan Now → Albums → refresh the browser**.
+After data or ebook uploads, a popup offers **Restart Library** or **I'll restart
+later** once active transfers finish.
+
+The USB capacity panel has a light-blue background. Selected tabs and upload
+categories use a gold **`#f3b41e`** background with dark text; selected download
+rows have a brighter purple background and a gold marker on the left.
+
+### Deleting files from the USB drive
+
+The fastest way to delete files is to **power down the Library, put its USB stick
+in another computer, and delete the files there**:
+
+1. Finish active transfers, then use **Shutdown** on the Library home page.
+2. Wait for **OK to power off**, disconnect power, and remove the USB stick.
+3. Insert it into another computer and delete the content files or folders you
+   no longer want using that computer's file manager.
+4. Safely eject the USB stick, reconnect it to the powered-off Library, and turn
+   the Library back on.
+
+`/Library` is the drive's mount point on the Pi; on another computer, open the
+USB drive itself to find folders such as `music`, `library`, and `calibre`.
+The downloader does not yet offer file/folder deletion in its interface. See
+[TODO.md](TODO.md) for planned features and the
+[Usage Guide](docs/USAGE.md#deleting-files-from-the-usb-drive) for more details.
 
 ---
 

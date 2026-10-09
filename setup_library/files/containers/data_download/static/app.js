@@ -4,6 +4,9 @@ const activeStates = new Set(["queued", "downloading", "verifying", "extracting"
 let state = {catalog: [], jobs: [], sources: {}, storage: {}, internet: {status: "checking"}}, source = "maps", page = 0;
 let selected = new Set(), visible = [], pollNumber = 0;
 let restartBusy = false, restartError = "";
+let uploadFiles = [], uploadBusy = false;
+let uploadRestartPending = false;
+const uploadDestinations = {music: "/Library/music", data: "/Library/library", ebooks: "/Library/calibre/put_new_books_here"};
 const remindedDownloads = new Set();
 const pageSize = 40;
 const destinations = {routing: "/Library/maps/osm", maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", survivor: "/Library/library"};
@@ -42,8 +45,8 @@ function renderInternet() {
   $("internet-message").textContent = state.internet.message || "Checking internet connection…";
   $("internet-message").className = offline ? "warning" : "";
   $("internet-detail").textContent = offline
-    ? "Checking again every 30 seconds. Downloads will become available automatically when the connection returns."
-    : "Waiting for the Pi to connect before checking the drive and download sources.";
+    ? "Local uploads work offline. Checking again every 30 seconds; downloads will become available when the connection returns."
+    : "Local uploads work without internet. Waiting for the Pi to connect before checking download sources.";
 }
 function eligible(row) {
   return state.internet.status === "online" && state.storage.ready && !installed(row) && !activeStates.has(jobFor(row)?.status)
@@ -69,7 +72,7 @@ function renderStorage() {
   const disk = state.storage;
   $("storage-text").textContent = disk.ready ? `${bytes(disk.free)} free of ${bytes(disk.total)}` : disk.error || "Checking drive…";
   $("storage-meter").value = disk.ready ? disk.used / disk.total * 100 : 0;
-  $("storage-detail").textContent = disk.ready ? `${bytes(disk.used)} used · ${bytes(disk.reserve)} kept free` : "Downloads are disabled until the mounted drive is writable.";
+  $("storage-detail").textContent = disk.ready ? `${bytes(disk.used)} used · ${bytes(disk.reserve)} kept free` : "Uploads and downloads need a writable, mounted drive.";
 }
 function filteredRows() {
   let rows = state.catalog.filter(row => row.source === source);
@@ -86,6 +89,15 @@ function filteredRows() {
     && (!$("fits").checked || (state.storage.ready && row.size != null && row.size <= state.storage.available)));
 }
 function renderFiles() {
+  const uploading = source === "upload";
+  $("download-panel").hidden = uploading;
+  $("upload-panel").hidden = !uploading;
+  $("catalog-title").textContent = uploading ? "Upload files" : "Available downloads";
+  $("count").hidden = uploading;
+  if (uploading) {
+    $("destination").textContent = "Add files from your device to the Library USB drive";
+    return;
+  }
   const rows = filteredRows(), pages = Math.max(1, Math.ceil(rows.length / pageSize));
   page = Math.min(page, pages - 1); visible = rows.slice(page * pageSize, (page + 1) * pageSize);
   $("files").replaceChildren();
@@ -190,20 +202,21 @@ function renderRouting() {
 // becomes idle. Failed/cancelled jobs alone must not trigger a restart reminder.
 function showRestartReminder() {
   const dialog = $("restart-reminder");
-  $("restart-now").disabled = restartBusy || !state.restart?.available || state.restart?.requested;
+  const active = state.jobs.filter(job => activeStates.has(job.status));
+  $("restart-now").disabled = restartBusy || active.length > 0 || uploadBusy || state.upload_active || !state.restart?.available || state.restart?.requested;
   $("restart-status").textContent = restartError || (state.restart?.requested
     ? "Restart requested. Keep power connected and reload this page when the Library is back online."
     : restartBusy ? "Requesting a graceful restart…"
     : state.restart?.available ? "" : "Automatic restart is not installed. Use the Library's Shutdown option, then turn it back on after shutdown finishes.");
-  const active = state.jobs.filter(job => activeStates.has(job.status));
   for (const job of active) remindedDownloads.delete(job.id);
-  if (active.length) {
+  if (active.length || uploadBusy || state.upload_active) {
     if (dialog.open) dialog.close();
     return;
   }
   const completed = state.jobs.filter(job => job.status === "complete" && !remindedDownloads.has(job.id));
-  if (!completed.length || dialog.open) return;
+  if ((!completed.length && !uploadRestartPending) || dialog.open || $("music-reminder").open) return;
   dialog.showModal();
+  uploadRestartPending = false;
   for (const job of completed) remindedDownloads.add(job.id);
 }
 async function poll() {
@@ -214,7 +227,7 @@ async function poll() {
     if (state.restart?.requested) return;
     state = {...state, ...fresh};
     selected = new Set([...selected].filter(id => state.catalog.some(row => row.id === id && eligible(row))));
-    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting();
+    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting(); renderUpload();
     showRestartReminder();
   } catch (error) { if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message); }
   setTimeout(poll, 2500);
@@ -223,6 +236,92 @@ async function download(ids) {
   try { await api("/api/download", {ids}); selected.clear(); notice(); pollNumber = 0; renderSelection(); }
   catch (error) { notice(error.message); }
 }
+function uploadCategory() { return document.querySelector('[name="upload-category"]:checked').value; }
+function renderUpload() {
+  const total = uploadFiles.reduce((sum, file) => sum + file.size, 0);
+  $("upload-destination").textContent = `Saves to ${uploadDestinations[uploadCategory()]}`;
+  $("upload-selected").textContent = uploadFiles.length ? `${uploadFiles.length} files selected · ${bytes(total)}` : "No files selected";
+  $("upload-controls").disabled = uploadBusy;
+  $("upload-start").disabled = uploadBusy || state.upload_active || !uploadFiles.length || !state.storage.ready || state.restart?.requested || total > state.storage.available;
+  $("upload-start").textContent = uploadBusy ? "Uploading…" : "Upload selected";
+  $("upload-readiness").textContent = uploadBusy ? ""
+    : state.restart?.requested ? "The Library is restarting. Wait for it to come back online."
+    : !state.storage.ready ? state.storage.error || "Checking the USB drive…"
+    : state.upload_active ? "Another upload is running. Wait for it to finish."
+    : total > state.storage.available ? "The selected files exceed the available drive space. Choose fewer files."
+    : "";
+}
+function selectUploads(input) {
+  uploadFiles = [...input.files];
+  $(input.id === "upload-files" ? "upload-folder" : "upload-files").value = "";
+  $("upload-list").replaceChildren(...uploadFiles.slice(0, 100).map(file => element("li", `${file.webkitRelativePath || file.name} · ${bytes(file.size)}`)));
+  if (uploadFiles.length > 100) $("upload-list").append(element("li", `And ${uploadFiles.length - 100} more files`));
+  $("upload-status").textContent = "";
+  $("upload-progress").hidden = true;
+  renderUpload();
+}
+function sendUpload(file, category, completed, total, index, count) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    const path = file.webkitRelativePath || file.name;
+    request.open("POST", "/api/upload?" + new URLSearchParams({category, path}));
+    request.setRequestHeader("X-Library-Token", state.token);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.upload.addEventListener("progress", event => {
+      $("upload-progress").value = total ? (completed + event.loaded) / total * 100 : 0;
+      $("upload-status").textContent = `${index + 1} of ${count}: Uploading ${path}…`;
+    });
+    request.upload.addEventListener("load", () => {
+      $("upload-status").textContent = `${index + 1} of ${count}: Saving ${path}${/\.zip$/i.test(path) ? " and extracting ZIP" : ""}…`;
+    });
+    request.addEventListener("load", () => {
+      let result;
+      try { result = JSON.parse(request.responseText); }
+      catch { reject(new Error("Unexpected server response. Check the destination before retrying.")); return; }
+      if (request.status >= 200 && request.status < 300) resolve(result);
+      else reject(new Error(result.error || "Upload failed"));
+    });
+    request.addEventListener("error", () => reject(new Error("Connection lost. Check the destination before retrying.")));
+    request.send(file);
+  });
+}
+$("upload-files").addEventListener("change", event => selectUploads(event.target));
+$("upload-folder").addEventListener("change", event => selectUploads(event.target));
+document.querySelectorAll('[name="upload-category"]').forEach(input => input.addEventListener("change", renderUpload));
+$("upload-start").addEventListener("click", async () => {
+  if (uploadBusy) return;
+  const files = [...uploadFiles], category = uploadCategory();
+  const total = files.reduce((sum, file) => sum + file.size, 0);
+  let completed = 0, succeeded = 0;
+  uploadBusy = true; renderUpload(); showRestartReminder(); notice();
+  $("upload-progress").hidden = false; $("upload-progress").value = 0;
+  try {
+    for (let index = 0; index < files.length; index++) {
+      $("upload-status").textContent = `${index + 1} of ${files.length}: Uploading ${files[index].webkitRelativePath || files[index].name}…`;
+      await sendUpload(files[index], category, completed, total, index, files.length);
+      completed += files[index].size; succeeded++;
+    }
+    $("upload-progress").value = 100;
+    $("upload-status").textContent = `Uploaded ${succeeded} file${succeeded === 1 ? "" : "s"} to ${uploadDestinations[category]}.` + (files.some(file => /\.zip$/i.test(file.name)) ? " ZIP files were extracted and removed." : "");
+    uploadFiles = [];
+  } catch (error) {
+    const failed = files[succeeded];
+    $("upload-status").textContent = `${succeeded} of ${files.length} uploaded. Stopped at ${failed.webkitRelativePath || failed.name}: ${error.message} Completed files were kept. Select the remaining files to retry.`;
+    uploadFiles = [];
+  } finally {
+    $("upload-files").value = ""; $("upload-folder").value = ""; $("upload-list").replaceChildren();
+    uploadBusy = false; renderUpload(); pollNumber = 0;
+    if (succeeded > 0) {
+      if (category === "music") $("music-reminder").showModal();
+      else uploadRestartPending = true;
+      showRestartReminder();
+    }
+  }
+});
+$("music-reminder").addEventListener("close", showRestartReminder);
+window.addEventListener("beforeunload", event => {
+  if (uploadBusy) { event.preventDefault(); event.returnValue = ""; }
+});
 $("home").href = `${location.protocol}//${location.hostname.includes(":") ? "[" + location.hostname.replace(/[\[\]]/g, "") + "]" : location.hostname}/`;
 document.querySelectorAll("[data-source]").forEach(button => button.addEventListener("click", () => {
   source = button.dataset.source; page = 0;

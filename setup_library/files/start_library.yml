@@ -42,8 +42,7 @@
 #   www (library)  10.88.0.201  :80
 #   music          10.88.0.210  :9099 -> container 5082
 #   ebook (calibre)10.88.0.211  :8083
-#   maps           10.88.0.212  :8080   (NOTE: shares .212 with the calibre
-#                                        "add new books" one-shot container)
+#   maps           10.88.0.212  :8080
 #   graphhopper    10.88.0.213  :8989   (maps routing; reached via maps /api/route)
 #   meshtastic     10.88.0.214  :8086   (detected USB Meshtastic radio + bridge)
 #   meshflash      10.88.0.214  :8086   (setup TUI when no radio responds;
@@ -1180,12 +1179,17 @@
                 sleep 2
               become: true
 
-            # One-shot container: import new books into the calibre library,
-            # then remove them from the incoming folder.
+            # One-shot container: no network needed for the local import.
+            # Wait for completion before starting Calibre-Web, remove the
+            # container on exit, and delete incoming files only on success.
             - name: add new ebooks
               when: 'newebooks.stdout|int > 0'
               ansible.builtin.shell: |
-                podman run -d --user 0 --ip 10.88.0.212 --privileged -v /Library/calibre/books:/books:rw -v /Library/calibre/put_new_books_here:/incoming:rw localhost/calibre-web /bin/bash -c "calibredb  add --with-library=/books -r --automerge=overwrite /incoming/*; rm -rvf /incoming/*"
+                podman run --rm --user 0 --network none --privileged \
+                  -v /Library/calibre/books:/books:rw \
+                  -v /Library/calibre/put_new_books_here:/incoming:rw \
+                  localhost/calibre-web /bin/bash -c \
+                  "calibredb add --with-library=/books -r --automerge=overwrite /incoming/* && rm -rvf /incoming/*"
 
             # Start the persistent Calibre-Web server on :8083.
             - name: start ebook

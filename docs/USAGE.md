@@ -42,6 +42,7 @@ The home page acts as a hub. Depending on what's installed, you may see:
 | **eBook Reader** | Browse, read, and download e-books | Home page link, or `http://10.1.1.1:8083` |
 | **Maps** | Offline interactive maps with a state/region selector, turn-by-turn driving directions, and a layer on/off panel | Home page link, or `http://10.1.1.1:8080` |
 | **[Meshtastic Communications](#meshtastic-communications)** | Send and receive mesh messages through the Pi's USB radio; includes firmware setup | Home page link, or `http://10.1.1.1:8086` |
+| **Downloads** | Download new content or upload your own music, data, and ebooks | Home page link, or `http://10.1.1.1:4826` |
 
 You can share the device with many people at once - up to about 90 devices can connect to
 the WiFi hotspot simultaneously.
@@ -63,8 +64,9 @@ Wikipedia snapshot was loaded onto the device.
 
 When the optional `data_download` image is installed, Library startup launches it.
 Select **Downloads** between **Meshtastic** and **Shutdown**, or open
-**http://library:4826** or **http://10.1.1.1:4826**. This setup tool needs an
-internet connection on the Pi; reading downloaded content remains offline.
+**http://library:4826** or **http://10.1.1.1:4826**. Discovering and downloading
+new content needs internet on the Pi; local uploads and reading saved content
+work offline.
 The **Routing** tab also offers US regional extracts for directions. After a file
 finishes downloading, choose **Use after restart**, then shut down and restart.
 Only one routing region is active at a time; the first import can take time and
@@ -72,7 +74,10 @@ needs additional storage and RAM.
 See the [Data Download setup guide](../setup_library/files/containers/data_download/README.md)
 for building and starting the container on your Raspberry Pi.
 
-The page shows USB capacity and free space, plus availability of each source.
+The light-blue panel shows USB capacity and free space. Selected tabs and upload
+categories have a gold (`#f3b41e`) background with dark text. Selected download
+rows have a purple highlight and a gold marker on the left. The page also shows
+availability of each source.
 Choose files under Maps, Wikipedia, or Survivor Library and press **Download
 selected**. You can search the list, filter files that fit, and watch or cancel
 downloads in the queue. Downloads continue if you close the browser.
@@ -86,6 +91,38 @@ Existing files are kept. Interrupted downloads can be retried, and the tool
 checks space again before downloading and extracting. New content may need a
 reader refresh or index update; follow the
 [reader instructions](../setup_library/files/containers/data_download/README.md#making-downloaded-content-visible).
+
+### Uploading files from your device
+
+1. Open **Downloads → Upload files**.
+2. Choose a destination from the table below.
+3. Use **Single or multiple files** to select files, or **A folder** to select a
+   folder with its contents.
+4. Press **Upload selected**. Keep the page open and the USB drive connected
+   until uploading and extraction finish.
+
+| Choice | Destination on the Library |
+| --- | --- |
+| Music files | `/Library/music` |
+| Data files | `/Library/library` |
+| Ebooks | `/Library/calibre/put_new_books_here` |
+
+Folder uploads keep the selected folder's name and subfolders; empty folders
+are not included by the browser. ZIP uploads are extracted in their destination
+folder, preserving archive paths, then removed. EPUBs stay intact. Allow extra
+free space for ZIP extraction. Existing files are kept; if an upload fails,
+earlier completed files remain saved. Follow the error message and select the
+remaining files to retry.
+
+After uploading music, the popup directs you to the music player:
+**Gear icon on the right → Scanner → Scan Now → Albums**, then refresh the
+browser for the music to show up.
+
+After uploading data or ebooks, a popup offers **Restart Library** or **I'll
+restart later**. It waits until uploads, downloads, and extraction finish.
+Restart Library reboots automatically; keep the power connected. If automatic
+restart is unavailable, use **Shutdown**, wait for **OK to power off**, then
+power off and start the Library again.
 
 ---
 
@@ -102,8 +139,14 @@ home page, it will show a login form. The credentials are pre-filled if not then
 - **Password:** `music`
 
 ### Adding music
-- copy your music to /Library/music or E:\Library\music or /Volumes/Library_USB/music
-- once there reboot and in the music app click the gear icon and scan for new music
+
+Use **Downloads → Upload files → Music files**, or copy music into the USB
+drive's `music` folder while the Library is powered off. That folder is mounted
+at `/Library/music` on the Pi.
+
+In the music player, click **Gear icon on the right → Scanner → Scan Now →
+Albums**, then refresh the browser for the music to show up.
+
 ### Listening on a phone app
 
 The music service also speaks the **Subsonic API**, so mobile apps like DSub or
@@ -130,7 +173,14 @@ If prompted to log in, the default account is:
 the catalog.)
 
 ## Adding books
-- copy files to /Library/calibre/put_new_books_here/ or E:\caliber\put_new_books\here or /Volumes/Library_USB/Library/calibre/put_new_books_here/
+
+Use **Downloads → Upload files → Ebooks**. Books are saved to
+`/Library/calibre/put_new_books_here`. After uploading, choose **Restart Library**
+in the popup, or **I'll restart later** if you still have files to add.
+
+You can also copy files into `calibre/put_new_books_here` on the USB drive using
+another computer while the Library is powered off. Safely eject the drive and
+return it to the Library before starting up again.
 
 ---
 
@@ -306,6 +356,30 @@ When you shut down:
 3. The screen shows **"OK to power off"** - now it's safe to unplug the power.
 
 If the device has a touchscreen, it may also offer a touch control to trigger shutdown.
+
+## Deleting files from the USB drive
+
+The fastest way to delete files is to power down the Library, put its USB stick
+in another computer, and delete the files there. The downloader does not yet
+have a GUI for deleting files or folders.
+
+1. Wait for uploads, downloads, and extraction to finish.
+2. Select **Shutdown** on the Library home page. Wait for **OK to power off**,
+   then disconnect power and remove the USB stick.
+3. Insert the USB stick into another computer and open it in the file manager.
+   `/Library` is its mount point on the Pi, not an extra folder to look for on
+   the other computer. Music is in `music`, general data is in `library`, and
+   ebook content is under `calibre`.
+4. Delete the content files or folders you no longer want. Keep application
+   databases and configuration files needed by the remaining content.
+5. Safely eject the USB stick, reconnect it to the powered-off Library, and
+   start the Library again.
+
+If a reader still lists removed content, refresh its page or rescan its library.
+For music, use **Gear icon → Scanner → Scan Now**, then **Albums** and refresh.
+GUI deletion, satellite imagery downloads, and USB content-drive cloning are
+planned in [TODO.md](../TODO.md). USB cloning is separate from the existing
+microSD cloning feature below.
 
 ---
 

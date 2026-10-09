@@ -10,6 +10,7 @@ the [testing guide](TESTING.md) covers automated and Raspberry Pi checks.
 | File | Responsibility | How it runs |
 | --- | --- | --- |
 | [app.py](../app.py) | HTTP server, connectivity lifecycle, storage checks, queue, downloads, validation, and extraction | Container entrypoint: `python3 /opt/data_download/app.py` |
+| [uploads.py](../uploads.py) | Bounded upload streaming, fixed destinations, ZIP validation, staging, and publication | Imported by `app.py`; called by upload request threads |
 | [routing.py](../routing.py) | Verified routing receipts, pending selection, atomic activation after GraphHopper stops | Imported by `app.py`; boot CLI: `python3 /opt/data_download/routing.py` |
 | [sources.py](../sources.py) | HTTPS connectivity probes and catalog discovery for four sources | Imported by `app.py`; no standalone command |
 | [tests/test_downloader.py](../tests/test_downloader.py) | Offline regression tests and loopback HTTP tests | `python3 -m unittest discover -s tests -v` |
@@ -53,8 +54,8 @@ interval using `time.monotonic()`. While offline the exact message is:
 
 > No Internet, its really hard to go on like this
 
-The first successful check initializes storage reporting and loads cached rows.
-Until then, `/api/state` reports storage as waiting. Discovery starts after that
+Storage reporting is available from startup, including while offline, so local
+uploads can proceed. The first successful internet check loads cached rows. Discovery starts after that
 first connection, and is requested again on an offline-to-online transition.
 An already-running scan is not duplicated. Internet checks continue while online.
 
@@ -144,6 +145,36 @@ An existing destination is refused instead of intentionally replaced. Staging
 and destination share a filesystem so the final rename makes the completed item
 visible at once. This does not provide a transaction across multiple jobs or a
 guarantee against power loss or other programs concurrently changing the drive.
+
+## Local uploads
+
+The Upload files tab sends raw files sequentially through `POST /api/upload`,
+using URL-encoded category and relative path parameters plus the request token.
+`Application.upload_active` serializes uploads and blocks host restart through
+the same lock used for download admission. Receiving/extraction runs on the HTTP
+request thread, independently of download discovery and the worker. Closing the
+page can interrupt transfers; uploads do not resume.
+
+`uploads.py` streams into a unique `.data_download/uploads/upload-*` temporary
+directory, checks paths and space through `Storage`, and stages ZIP members
+with CRC validation. Only `.zip` filenames trigger extraction; EPUBs are kept.
+Publication checks for conflicts, creates files exclusively, and copies staged
+data in bounded chunks before reclaiming staging space. Normal exceptions roll
+back files created by that request and clean staging. Abrupt termination can
+leave staging and partially published files. No batch-wide transaction is claimed.
+Other programs can still consume space or modify destination directories.
+
+At the end of a browser upload batch, at least one successful music upload opens
+the scanner-instructions dialog. Successful data/ebook uploads set a page-local
+restart-reminder flag. The restart dialog waits for active downloads and uploads
+to finish and for the music dialog to close; it does not stack over the music
+instructions. The flag is cleared when the restart dialog appears, so polling
+does not reopen it repeatedly. A partial batch failure still shows the relevant
+reminder for saved files; a batch with no successes shows no reminder.
+
+The UI uses a light-blue storage panel and gold (`#f3b41e`) selected tabs/upload
+categories with dark text. Checked download rows have a purple fill and gold
+left-edge marker. Selection styling follows `aria-pressed` and checked inputs.
 
 ## Persistent files and retries
 

@@ -341,20 +341,20 @@ class StorageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             application.enqueue([rows[0]["id"]])
 
-    def test_offline_startup_waits_for_internet_before_storage_and_discovery(self):
+    def test_offline_startup_reports_storage_but_waits_for_discovery(self):
         application = app.Application(self.storage)
         with patch.object(sources, "internet_available", side_effect=[False, False, True, True]), \
                 patch.object(application, "load_cache") as cache, \
-                patch.object(self.storage, "status") as disk, \
+                patch.object(self.storage, "status", wraps=self.storage.status) as disk, \
                 patch.object(application, "refresh") as refresh:
             application.check_internet()
             application.check_internet()
             snapshot = application.snapshot()
             self.assertEqual(snapshot["internet"]["status"], "offline")
             self.assertEqual(snapshot["internet"]["message"], "No Internet, its really hard to go on like this")
-            self.assertFalse(snapshot["storage"]["ready"])
+            self.assertTrue(snapshot["storage"]["ready"])
             cache.assert_not_called()
-            disk.assert_not_called()
+            disk.assert_called_once()
             refresh.assert_not_called()
             with self.assertRaisesRegex(ValueError, "No Internet"):
                 application.enqueue(["some-file"])
@@ -364,7 +364,7 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(application.internet["status"], "online")
             self.assertEqual(application.internet["message"], "")
             cache.assert_called_once()
-            disk.assert_called_once()
+            self.assertEqual(disk.call_count, 2)
             refresh.assert_called_once()
 
     def test_disconnect_and_reconnect_update_status_and_refresh(self):

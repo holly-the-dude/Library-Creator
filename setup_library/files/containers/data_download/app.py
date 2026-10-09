@@ -29,9 +29,11 @@ import time
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
+from urllib.parse import parse_qs, urlsplit
 
 import sources
 import routing
+import uploads
 
 CHUNK = 1024 * 1024
 STATIC = Path(__file__).parent / "static"
@@ -349,14 +351,29 @@ class Application:
         self.initialized = False
         self.stopping = threading.Event()
         self.restart_requested = False
+        self.upload_active = False
+
+    def upload(self, stream, length, category, name):
+        """Serialize local uploads and exclude host restart while bytes are written."""
+        with self.lock:
+            if self.restart_requested:
+                raise ValueError("The Library is restarting; wait for it to come back online")
+            if self.upload_active:
+                raise ValueError("Another upload is running; wait for it to finish")
+            self.upload_active = True
+        try:
+            return uploads.receive(stream, length, category, name, self.storage)
+        finally:
+            with self.lock:
+                self.upload_active = False
 
     def restart(self):
         """Serialize restart with queue admission; wait for every active job."""
         with self.lock:
             if self.restart_requested:
                 return
-            if any(job["status"] in ACTIVE for job in self.jobs.values()):
-                raise ValueError("Wait for downloads, verification and extraction to finish before restarting")
+            if self.upload_active or any(job["status"] in ACTIVE for job in self.jobs.values()):
+                raise ValueError("Wait for uploads, downloads, verification and extraction to finish before restarting")
             if not restart_available():
                 raise ValueError("Restart control is not installed. Use the Library Shutdown option instead.")
             request_host_restart()
@@ -579,13 +596,13 @@ class Application:
     def snapshot(self, include_catalog=False):
         """Copy browser state, optionally adding sorted rows and installed flags.
 
-        Report storage as waiting before the first successful internet check.
+        Report storage even when offline so local uploads remain available.
         Installed flags indicate destination existence, not an integrity audit.
         """
         with self.lock:
-            disk = self.storage.status() if self.initialized else {
-                "ready": False, "path": str(self.storage.root), "error": "Waiting for internet connection"}
+            disk = self.storage.status()
             result = {"storage": disk, "internet": self.internet.copy(),
+                      "upload_active": self.upload_active,
                       "sources": copy.deepcopy(self.sources),
                       "refreshing": self.refreshing, "jobs": copy.deepcopy(list(self.jobs.values())),
                       "token": self.token,
@@ -649,10 +666,22 @@ class Handler(BaseHTTPRequestHandler):
         self.respond(404, {"error": "Not found"})
 
     def do_POST(self):
-        """Validate token and bounded JSON body, then dispatch a queue action."""
+        """Validate token, then accept a streamed upload or bounded JSON action."""
         if not secrets.compare_digest(self.headers.get("X-Library-Token", ""), self.server.app.token):
             return self.respond(403, {"error": "Reload the page before making changes"})
         try:
+            route = urlsplit(self.path)
+            if route.path == "/api/upload":
+                self.close_connection = True
+                if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Length") is None:
+                    raise ValueError("Uploads require Content-Length and no Transfer-Encoding")
+                length = int(self.headers["Content-Length"])
+                parameters = parse_qs(route.query, strict_parsing=True)
+                if set(parameters) != {"category", "path"} or any(len(values) != 1 for values in parameters.values()):
+                    raise ValueError("Specify one upload category and relative path")
+                self.connection.settimeout(60)
+                result = self.server.app.upload(self.rfile, length, parameters["category"][0], parameters["path"][0])
+                return self.respond(201, result)
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 65536:
                 raise ValueError("Invalid request size")

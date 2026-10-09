@@ -27,15 +27,15 @@ The Python modules also include function and class docstrings for IDE help.
 On startup it first checks the Pi's internet connection. While offline, the
 main page displays **"No Internet, its really hard to go on like this"** and
 the container retries every **30 seconds**. Once connected, it automatically
-checks `/Library` filesystem capacity and free space and discovers all four
-sources independently in the background. It downloads content only when you
+discovers all four sources independently in the background. Drive capacity is
+reported even while offline, and local uploads remain available. It downloads content only when you
 select files and press **Download selected**.
 
 Connectivity checks use small HTTPS HEAD requests to the source sites, falling
 back to another host if one is unreachable. Checks continue every 30 seconds
 while running, so the message reappears if connectivity is lost and the catalog
 refreshes automatically on reconnection. Download/refresh controls are disabled
-while offline; the local webpage remains accessible.
+while offline; the local webpage and **Upload files** remain accessible.
 
 | Source | Files offered | Destination on the USB drive |
 | --- | --- | --- |
@@ -174,6 +174,11 @@ the playbook recreates the named downloader with the correct mapping.
 
 ## Using the page
 
+The **Library USB drive** capacity panel has a light-blue background. Selected
+tabs and upload categories use a gold (`#f3b41e`) background with dark text and
+a stronger border. Selected download rows have a brighter purple background
+and a gold marker on the left.
+
 1. Give the **Pi** internet access, then open `http://<pi-ip>:4826`.
 2. Check the drive capacity and free space. Each source reports its own status;
    Survivor Library takes longer because every category page must be checked.
@@ -191,14 +196,70 @@ the playbook recreates the named downloader with the correct mapping.
    connected. Older installations need the [host restart handler](docs/RESTART.md)
    before the button is enabled; otherwise use the Library's Shutdown option,
    wait for shutdown to finish, then start it again.
-   The reminder waits until downloads and extraction are idle, and appears once
-   per completed batch while the page is open. Its button dismisses the reminder;
-   it does not shut down the device.
+   The reminder waits until uploads, downloads, and extraction are idle, and
+   appears once per completed batch while the page is open. **I'll restart
+   later** dismisses the reminder without restarting.
 
 Downloads run one at a time with 1 MiB streaming buffers. Catalog discovery uses
 at most four workers per multi-page source. Files are saved on the Pi's mounted
 drive, not the browser's computer. The UI has no login; use it on your trusted
 Library LAN, as other clients on that LAN can manage this shared queue.
+
+### Upload your own files
+
+Select **Upload files** beside Maps, Routing, Wikipedia, and Survivor Library.
+Choose a destination, then select one file, multiple files, or a folder:
+
+| Choice | Destination |
+| --- | --- |
+| Music files | `/Library/music` |
+| Data files | `/Library/library` |
+| Ebooks | `/Library/calibre/put_new_books_here` |
+
+Press **Upload selected** and keep the page open until it finishes. Internet
+access is not needed. Files upload one at a time with transfer progress and a
+saving/extracting status. Folder uploads preserve the selected folder's name
+and subfolders; browsers do not include empty folders from the device.
+
+Files ending in `.zip` (case insensitive) are extracted beside where the ZIP
+would have been saved, preserving archive paths and all file types, then the
+uploaded ZIP is removed. For example, uploading `album.zip` to Music with an
+`Artist/song.mp3` member creates `/Library/music/Artist/song.mp3`. EPUB files
+remain intact. Archives inside an uploaded ZIP are kept as files, not recursively
+extracted. Encrypted archives, unsafe paths, and symlinks are rejected.
+
+Existing files are never intentionally overwritten. A conflict stops the batch;
+files completed earlier remain saved. Select the remaining files to retry.
+Each upload is staged before publication and cleaned up on normal failures.
+Allow free space for the upload, expanded ZIP contents, and an additional copy
+of the largest file while publishing, plus the normal reserve. A hard shutdown
+can leave partial content or `.data_download/uploads/upload-*` staging folders.
+Automatic restart is blocked while an upload is running.
+
+After music uploads, a popup explains how to make the files appear in the music
+player: **Gear icon on the right → Scanner → Scan Now → Albums**, then refresh
+the browser. After data or ebook uploads, the page offers **Restart Library** or
+**I'll restart later**, once uploads and downloads have finished. If a batch
+stops with an error after saving some files, the reminder still applies to those
+saved files; a batch with no successful uploads does not show a reminder.
+
+### Deleting files
+
+The fastest way to delete files is to **power down the Library, insert its USB
+stick into another computer, and delete the files there**. Finish active
+transfers, use **Shutdown** from the home page, wait for **OK to power off**,
+and disconnect power before removing the drive. On the other computer, use its
+file manager to delete unwanted content. Safely eject the USB stick, return it
+to the powered-off Library, and start the Library again.
+
+On the Pi, the USB drive is mounted at `/Library`; on another computer, open
+the drive itself to find `music`, `library`, `calibre`, and the other content
+folders. Keep application databases and configuration needed by the content
+you retain. Refresh or rescan readers if they still list removed files.
+
+The downloader has no file/folder deletion interface yet. That feature,
+satellite imagery downloads, and cloning to a same-size or larger USB stick
+are tracked in the repository's [TODO.md](../../../../TODO.md).
 
 ### Space and integrity
 

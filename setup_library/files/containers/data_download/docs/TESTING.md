@@ -42,9 +42,10 @@ read-only mount is required. The image working directory makes `app` and
 | `DiscoveryTests` | Connectivity fallback, all-host failure, HTTP rate limits, captive-portal redirects, exact ZIM sizes, category filtering, malformed ZIP anchors, LFS metadata, unsafe filenames |
 | `StorageTests` | Mount/root checks, symlinks/traversal, free-space reserve, successful transfers, Range/If-Range resume, ignored/invalid ranges, complete ZIP reuse, truncated transfers, checksum/format rejection, cancellation |
 | `StorageTests` | PDF-only extraction, unsafe ZIP entries, expanded-space checks, preservation of existing categories, CRC failure cleanup, source isolation/cache reload, duplicate queue submissions, publication of all four content types |
-| `StorageTests` | Offline startup before storage/discovery, exact offline text, reconnection refresh, 30-second timing, and manual refresh gating |
+| `StorageTests` | Offline drive reporting with discovery gated on connectivity, exact offline text, reconnection refresh, 30-second timing, and manual refresh gating |
 | `HTTPTests` | Static/API GET routes and headers, continued responses with a broken access-log pipe, token enforcement, and rejection of download requests outside the accepted workflow |
 | `RestartTests` | Real Unix socket requests with systemctl mocked, rejection of arbitrary commands, active-job blocking, duplicate suppression, failed-host retries, and missing-handler fallback |
+| `UploadTests`, `UploadHTTPTests` | All three destinations, folder/Unicode paths, empty files, offline uploads, ZIP cleanup and CRC validation, conflict preservation, unsafe paths/symlinks, publication rollback, space limits, restart exclusion, token enforcement, and streaming above the JSON size limit |
 
 Restart tests never invoke a real shutdown or systemd action. The extra host
 Python module mount above is needed only for these bridge tests. Before a manual
@@ -85,8 +86,8 @@ and the host mount guard are in the [README](../README.md#build-and-run-on-the-r
 
 1. **Offline startup:** start without external internet access. The local page
    should remain reachable and display the exact offline message. New downloads
-   and source refresh should be disabled; storage initialization and discovery
-   should wait for connectivity.
+   and source refresh should be disabled; discovery should wait for connectivity.
+   Drive capacity and local uploads should work without internet.
 2. **Recovery:** restore the Pi's internet access. A subsequent 30-second check
    should clear the message and start discovery without a page reload or container
    restart. The browser's own 2.5-second polling adds a small display delay.
@@ -108,6 +109,22 @@ and the host mount guard are in the [README](../README.md#build-and-run-on-the-r
    the PDF index as described in the [reader instructions](../README.md#making-downloaded-content-visible).
 8. **Shutdown:** stop the container with Podman and confirm it exits cleanly.
    Inspect `.data_download` for interrupted work before reclaiming temporary files.
+9. **Uploads:** select Upload files in the same row as the download categories.
+   Try a single file, multiple files, and a folder for each destination. Verify
+   progress, preserved folder paths, the light-blue capacity panel, and offline
+   operation. Upload a ZIP with mixed file types; verify extraction and archive
+   removal. Existing files must be kept when a conflicting upload fails. Try
+   narrow/mobile layouts and keyboard navigation as well as desktop browsing.
+   Selected tabs and upload categories should have a `#f3b41e` background;
+   checked file rows should have a purple fill and gold left-edge marker.
+10. **Upload reminders:** after music uploads, confirm the popup gives the
+    **Gear icon → Scanner → Scan Now → Albums → refresh** instructions. After
+    data or ebook uploads, confirm the restart dialog offers **Restart Library**
+    and **I'll restart later**, waiting for active transfers to finish. Closing
+    a reminder should not cause it to reopen on the next poll. A batch with no
+    successful uploads should not trigger a reminder; a partially successful
+    batch should show one for saved files. Music and restart dialogs must not
+    appear on top of each other.
 
 ## Validation limits
 

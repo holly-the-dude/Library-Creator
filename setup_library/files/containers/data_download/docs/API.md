@@ -17,8 +17,9 @@ the Pi; downloaded files are written to its mounted Library drive.
 | POST | `/api/refresh` | Request asynchronous discovery if online and no scan is active |
 | POST | `/api/download` | Queue selected catalog IDs |
 | POST | `/api/cancel` | Set a known job's cancellation event |
+| POST | `/api/upload?category=music&path=filename` | Stream one file to a fixed destination; extract `.zip` files |
 
-Paths are matched exactly; there are no query parameters or trailing-slash
+Paths are matched exactly; only uploads use query parameters. There are no trailing-slash
 aliases. Unknown GET/POST paths return `404` (POST token validation happens
 before routing). Methods outside GET/POST use the base HTTP handler's behavior.
 
@@ -35,6 +36,7 @@ internet availability, a mounted drive, or successful downloads.
 | `refreshing` | Whether a catalog scan is active |
 | `jobs` | List of this process's job records |
 | `token` | Per-process request token needed for POST actions |
+| `upload_active` | Whether the server is receiving, extracting, or publishing an upload |
 | `catalog` | Present only on `/api/catalog` |
 
 While offline, `internet.message` is exactly
@@ -44,8 +46,8 @@ checks every 30 seconds, independently of whether any browser is open.
 
 Ready storage contains `ready: true`, `path`, `total`, `used`, `free`, `available`,
 and `reserve`. All numeric sizes are bytes; `available` is `max(0, free - reserve)`.
-Unavailable storage contains `ready: false`, `path`, and `error`. Before the first
-successful internet check, its error is `Waiting for internet connection`.
+Unavailable storage contains `ready: false`, `path`, and `error`. Storage is checked
+even before the first successful internet connection so local uploads work offline.
 
 Source records contain `name`, `url`, `status`, `count`, and `error`. States are
 `waiting`, `cached`, `checking`, `available`, `partial`, or `unavailable`.
@@ -87,7 +89,7 @@ all discovered editions.
 ## Mutating requests
 
 Obtain `token` from `/api/state` or `/api/catalog` and send it in the
-`X-Library-Token` header. Use a JSON object body and `Content-Type: application/json`.
+`X-Library-Token` header. Except for uploads, use a JSON object body and `Content-Type: application/json`.
 The body must have a `Content-Length` between 1 and 65,536 bytes. Fetch a new token
 after restarting the container. The server does not provide an arbitrary-URL
 download endpoint: obtain IDs from its catalog.
@@ -96,6 +98,44 @@ The token protects browser actions against cross-origin requests. It is not a
 login or an authorization boundary between users on the Library LAN: anyone
 who can read the API can obtain it. Responses send no-store, nosniff, and a
 same-origin Content Security Policy; no CORS access is configured.
+
+### Upload local files
+
+`POST /api/upload?category=<category>&path=<relative-path>` accepts a raw binary
+body (`application/octet-stream`), with the usual `X-Library-Token`. URL-encode
+both query values. Categories are `music` (`music/`), `data` (`library/`), and
+`ebooks` (`calibre/put_new_books_here/`), relative to `LIBRARY_ROOT`. The path can
+contain a folder hierarchy, but must not contain absolute paths, traversal,
+backslashes, colons, control characters, or existing symlinks.
+
+A nonnegative `Content-Length` is required, including zero for an empty file.
+Chunked transfer encoding is rejected. The JSON body size limit does not apply;
+drive space and its reserve are checked before and during writes. Reads use
+1 MiB buffers with a 60-second socket inactivity timeout. Send one request per
+file; only one upload request may run at once. Internet is not required.
+
+The response is `201` after publication, for example:
+
+```json
+{"ok": true, "files": 1, "extracted": false, "destination": "music/Album/song.mp3"}
+```
+
+For `.zip` uploads (case insensitive), `destination` names the containing folder
+and `files` counts the extracted files. All members are validated and staged
+before publication; the compressed upload is removed. Empty ZIPs, over 100,000
+entries, duplicate paths, encrypted members, special files, unsafe paths, and
+CRC errors are rejected. EPUBs and nested ZIPs remain files. Existing destination
+files are preserved; existing directories may be merged. Publication copies
+files exclusively and rolls back that request's newly created files on a normal
+failure. Space is needed for staging plus a publication copy of the largest file.
+There is no power-loss transaction across files or an entire browser batch.
+
+Validation, space, conflict, and interrupted-stream failures return `400` with
+`error`; incorrect tokens return `403`. Temporary data is removed on normal
+failures. Closing the browser interrupts uploads; there is no upload resume.
+Completed earlier requests stay saved. Uploads are separate from download jobs
+and do not appear in the download queue. Restart blocks while `upload_active` is
+true, and accepted restart requests reject further uploads.
 
 ### Restart the Library
 
