@@ -104,7 +104,7 @@ You will see the main menu:
   Main Menu
 ──────────────────────────────────────────────────
   1) Fresh Install          - Full installation from scratch
-  2) Reinstall              - Remove existing and reinstall
+  2) Reinstall / Upgrade    - Git pull, then reinstall cleanup
   3) Resume Install         - Continue interrupted install
   4) System Status          - Check installation progress
   5) Advanced Options       - Manual boot stage selection
@@ -259,15 +259,27 @@ less /root/installplay.log
 
 ---
 
-## Reinstalling or starting over
+## Reinstalling or upgrading
 
-Run `./bootstrap` and choose **`2) Reinstall`**. This:
+Run `/root/Library-Creator/bootstrap` and choose **`2) Reinstall / Upgrade`**.
+After you confirm, this:
 
+- Runs `git -C /root/Library-Creator pull --ff-only` to update the current branch
+  from its configured upstream
 - Clears the boot-stage flags (`.0boot`, `.firstboot`, `.secondboot`, `.thirdboot`)
-- Removes the `install/` and `display/` directories
+- Removes `/root/install`, `/root/display`, and `/root/start_library`
+- Stops all Podman containers
 - Removes all Podman container images
 
-After it finishes, run **`1) Fresh Install`** again.
+The Git update needs internet. If the checkout is missing or the pull fails,
+cleanup does not start. Resolve the reported Git or connection error and retry;
+the installer does not discard local changes or force a merge.
+
+After cleanup finishes, the installer exits. Run
+`/root/Library-Creator/bootstrap` again and choose **`1) Fresh Install`** to use
+the updated installer and rebuild the installation. Reinstall cleanup does not
+delete USB content; the normal Fresh Install formatting rules still apply to
+drives without the `Library_USB` label.
 
 To resume an interrupted install without wiping anything, choose **`3) Resume Install`**.
 

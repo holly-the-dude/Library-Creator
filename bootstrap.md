@@ -33,7 +33,7 @@ native resolution or an explicitly selected resolution.
 | Option | Action |
 | --- | --- |
 | Fresh Install | Choose a display, review the settings and start First Boot |
-| Reinstall | Confirm removal of progress flags, staged files and all Podman images, then return to the menu |
+| Reinstall / Upgrade | Confirm, run `git pull --ff-only` in `/root/Library-Creator`, then perform reinstall cleanup and exit |
 | Resume Install | Use stage flags to select the next pending stage |
 | System Status | Show stage flags, uptime and whether Ansible is running |
 | Advanced Options | Run a stage manually, reset flags or view the installation log |
@@ -43,9 +43,23 @@ USB content disk as exFAT with the label `Library_USB` when that label is absent
 It displays a countdown before formatting. Disconnect unrelated storage first;
 a correctly labelled content drive is retained.
 
-Reinstall removes `/root/install`, `/root/display`, `/root/start_library`, the
-stage flags and all Podman images. It is not a routine service update. First Boot
-can subsequently format storage as described above.
+**2) Reinstall / Upgrade** first updates `/root/Library-Creator` from the current
+branch's configured upstream with `git pull --ff-only`. It uses that checkout
+regardless of your working directory or whether you launched `/root/bootstrap`.
+Internet access to the Git remote is required. A missing checkout or failed pull
+stops the operation before cleanup; Git errors are shown so you can resolve them
+and retry. The installer does not force a reset, discard local edits, or create
+a merge commit when branches have diverged.
+
+After a successful pull, it performs the same reinstall cleanup: remove
+`/root/install`, `/root/display`, `/root/start_library` and the stage flags,
+stop all Podman containers, then remove all Podman images. It exits afterward.
+Run `/root/Library-Creator/bootstrap` again and choose **1) Fresh Install** to
+install the updated checkout, including any changes to bootstrap itself.
+
+This is a full reinstall, not a routine service update. The cleanup does not
+delete USB content, but First Boot can subsequently format storage as described
+above.
 
 ## Boot stages
 
