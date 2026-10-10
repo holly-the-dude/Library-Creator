@@ -1,6 +1,5 @@
 #!/usr/bin/python3
 """Serve the host's shutdown/restart confirmation page on port 9999.
-
 POST /shutdown runs the existing power-off helper. POST /reboot schedules the
 graceful library-restart.service so its sequence survives the HTTP connection.
 Opening the page with GET never changes the host's power state.
