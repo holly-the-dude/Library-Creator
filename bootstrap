@@ -236,10 +236,14 @@ do_reinstall() {
         msg_step "Removing boot flags and install files..."
         rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot /root/start_library
         rm -rf /root/install /root/display
+        msg_step "Stopping all pods ...." 
+        podman stop --all 
+        podman stop --all 
         msg_step "Removing all podman images..."
         podman rmi --all --force 2>/dev/null
         msg_ok "Reinstall cleanup complete"
-        msg_info "You can now run a Fresh Install"
+        msg_info "You can now run bootstrap again and do a Fresh Install"
+        exit 
     else
         msg_info "Reinstall cancelled"
     fi
