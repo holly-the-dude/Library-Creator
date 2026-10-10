@@ -25,6 +25,8 @@ RUN apt-get update && \
 
 # Copy the main management script
 COPY library.py /root/library.py
+COPY style.css /root/style.css
+COPY assets/ /usr/share/library-web/
 
 # Copy the configuration file that defines containers and services
 COPY library_setup.yml /root/library_setup.yml

@@ -12,6 +12,8 @@ Reads configuration from library_setup.yml and:
 import os
 import sys
 import requests
+from html import escape
+from pathlib import Path
 from urllib.parse import quote
 
 # PyYAML is required - install with: pip install pyyaml
@@ -135,8 +137,8 @@ def check_service(service):
         response = requests.get(url, timeout=timeout)
         if check_text in response.content.decode("utf-8"):
             return (
-                f'<a style="font-size: 24px"; href="{external_url}" '
-                f'target="_blank">{display_name}</a> |'
+                f'<a href="{escape(external_url, quote=True)}" '
+                f'target="_blank" rel="noopener noreferrer">{escape(display_name)}</a>'
             )
     except requests.RequestException:
         pass
@@ -229,44 +231,62 @@ def get_html_template(nav_links, shutdown_url):
     Returns:
         HTML template string with TREE_CONTENT_PLACEHOLDER for content insertion
     """
-    return f"""<html>
+    # Embed the bundled theme so every generated page works offline. Keeping it
+    # in the template header also invalidates cached pages after a theme update.
+    stylesheet = Path(__file__).with_name("style.css").read_text(encoding="utf-8")
+    return f"""<!doctype html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Library Index</title>
     <style>
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        td, th {{
-            border: 1px solid #ddd;
-            padding: 8px;
-            font-size: 24px;
-            font-weight: bold;
-        }}
-        tr:nth-child(even) {{
-            background-color: #f2f2f2;
-        }}
-        tr:hover {{
-            background-color: #ddd;
-        }}
+{stylesheet}
     </style>
 </head>
 <body>
-    <div>
-        <a style="font-size: 24px"; href="/">Home</a> |
-        {nav_links}
-        <a style="font-size: 24px"; href="{shutdown_url}">Shutdown</a>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Categories</th>
-            </tr>
-        </thead>
-        <tbody>
-            <!--TREE_CONTENT-->
-        </tbody>
-    </table>
+    <a class="skip-link" href="#library-content">Skip to files</a>
+    <header>
+        <div class="wrap topbar">
+            <a class="brand" href="/">
+                <img class="brand-logo" src="/library-brand.jpg" alt="" width="108" height="72">
+                <span class="brand-tagline">Offline depository, in your hands</span>
+            </a>
+            <span class="badge">Library home</span>
+        </div>
+    </header>
+    <main class="wrap">
+        <div class="heading">
+            <p class="eyebrow">YOUR OFFLINE LIBRARY</p>
+            <h1>Bring knowledge with you.</h1>
+            <p>Read, listen, explore, and discover the content on your Library drive.</p>
+        </div>
+        <section class="panel" aria-labelledby="services-title">
+            <h2 id="services-title">Explore your Library</h2>
+            <p>Choose a service or browse your files below.</p>
+            <nav class="tabs" aria-label="Library services">
+                <a href="/" aria-current="location">Home</a>
+                {nav_links}
+                <a class="shutdown" href="{escape(shutdown_url, quote=True)}">Shutdown</a>
+            </nav>
+        </section>
+        <section class="panel" id="library-content" aria-labelledby="files-title" tabindex="-1">
+            <div class="section-heading">
+                <div><h2 id="files-title">Browse the library</h2><p>Open a folder to explore. Files open in a new tab.</p></div>
+                <span class="badge">Saved on USB</span>
+            </div>
+            <!--FOLDER_NAV-->
+            <div class="table-scroll">
+                <table>
+                    <thead><tr><th scope="col">File / folder</th><th scope="col">Type</th></tr></thead>
+                    <tbody>
+                        <!--TREE_CONTENT-->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <footer>Saved content stays on your USB drive and is available offline.<br>Use Shutdown before disconnecting power or removing the drive.</footer>
+    </main>
 </body>
 </html>
 """
@@ -274,9 +294,10 @@ def get_html_template(nav_links, shutdown_url):
 
 # Placeholder used in HTML templates for inserting page-specific content
 TREE_CONTENT_PLACEHOLDER = "<!--TREE_CONTENT-->"
+FOLDER_NAV_PLACEHOLDER = "<!--FOLDER_NAV-->"
 
 
-def build_html_tree(path, web_path, html_template, base_url="/library/"):
+def build_html_tree(path, web_path, html_template, base_url="/library/", current_page_url="/"):
     """
     Recursively build HTML table rows for the directory tree.
     Creates separate HTML pages for each subdirectory.
@@ -286,6 +307,7 @@ def build_html_tree(path, web_path, html_template, base_url="/library/"):
         web_path: output directory for generated HTML files
         html_template: HTML template string with {tree_content} placeholder
         base_url: URL prefix for file links
+        current_page_url: URL of this directory's index, used by its children's Back links
 
     Returns:
         HTML string of table rows for the current directory
@@ -303,23 +325,37 @@ def build_html_tree(path, web_path, html_template, base_url="/library/"):
             # Recurse into subdirectory
             subdir_content = build_html_tree(
                 full_path, web_path, html_template,
-                base_url + quote(item) + "/"
+                base_url + quote(item) + "/", f"/{quote(item)}.html"
             )
             # Create a separate HTML page for this subdirectory
-            local_html = html_template.replace(TREE_CONTENT_PLACEHOLDER, subdir_content)
-            with open(os.path.join(web_path, f"{item}.html"), "w") as f:
+            back_label = "Back to library" if current_page_url == "/" else "Back to parent folder"
+            folder_nav = (
+                '<nav class="folder-nav" aria-label="Folder navigation">'
+                f'<a class="back-button" href="{escape(current_page_url, quote=True)}">'
+                f'<span aria-hidden="true">←</span> {back_label}</a>'
+                f'<span class="current-folder">{escape(item)}</span></nav>'
+            )
+            local_html = html_template.replace(FOLDER_NAV_PLACEHOLDER, folder_nav).replace(
+                TREE_CONTENT_PLACEHOLDER, subdir_content)
+            with open(os.path.join(web_path, f"{item}.html"), "w", encoding="utf-8") as f:
                 f.write(local_html)
-            output += f'<tr><td><a href="{quote(item)}.html">{item}</a></td></tr>'
+            output += (
+                f'<tr><td><a class="file-link folder-link" href="{quote(item)}.html">'
+                f'<span class="entry-icon" aria-hidden="true">▸</span><span>{escape(item)}</span></a></td>'
+                '<td><span class="file-type folder-type">Folder</span></td></tr>'
+            )
         else:
             # Create a link to the file
             link_name = item.replace("_", " ").rsplit(".", 1)[0]
             file_url = "/library" + base_url + quote(item)
+            file_type = os.path.splitext(item)[1].lstrip(".").upper() or "File"
             output += (
-                f'<tr><td><a href="{file_url}" target="_blank">'
-                f"{link_name}</a></td></tr>"
+                f'<tr><td><a class="file-link" href="{file_url}" target="_blank" rel="noopener noreferrer">'
+                f'<span class="entry-icon" aria-hidden="true">↗</span><span>{escape(link_name)}</span></a></td>'
+                f'<td><span class="file-type">{escape(file_type)}</span></td></tr>'
             )
 
-    return output
+    return output or '<tr><td colspan="2" class="empty">No files in this folder yet.</td></tr>'
 
 
 # =============================================================================
@@ -354,6 +390,10 @@ server {{
     location /library {{
         autoindex on;
         alias /library;
+    }}
+
+    location = /library-brand.jpg {{
+        alias /usr/share/library-web/library.jpg;
     }}
 
     location /music {{
@@ -451,7 +491,8 @@ def main():
 
     # Service availability can change without adding/removing library files.
     # Compare the generated header so new navigation also reaches cached pages.
-    expected_header = html_template.split(TREE_CONTENT_PLACEHOLDER, 1)[0]
+    root_template = html_template.replace(FOLDER_NAV_PLACEHOLDER, "")
+    expected_header = root_template.split(TREE_CONTENT_PLACEHOLDER, 1)[0]
     try:
         with open(os.path.join(web_path, "index.html"), "r") as f:
             navigation_changed = not f.read().startswith(expected_header)
@@ -465,8 +506,8 @@ def main():
     tree_content = build_html_tree(library_path, web_path, html_template)
 
     # Create the main index page
-    index_html = html_template.replace(TREE_CONTENT_PLACEHOLDER, tree_content)
-    with open(os.path.join(web_path, "index.html"), "w") as f:
+    index_html = root_template.replace(TREE_CONTENT_PLACEHOLDER, tree_content)
+    with open(os.path.join(web_path, "index.html"), "w", encoding="utf-8") as f:
         f.write(index_html)
 
     print("HTML generation complete.")

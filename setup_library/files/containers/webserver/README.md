@@ -10,11 +10,47 @@ and radio selection are handled by the runtime
 webserver/
 ├── Containerfile        # Container build instructions
 ├── library.py           # Main management script (configures nginx, monitors services)
+├── style.css            # Downloader-matched theme embedded in generated pages
+├── assets/library.jpg   # Header logo copied from ../../display/library.jpg
 ├── library_setup.yml    # Configuration: containers, services, webserver settings
 ├── cgi/
 │   └── shutdown.py      # CGI script for remote shutdown (port 9999)
 └── README.md
 ```
+
+## Appearance and file browsing
+
+The top-left header links home and shows the supplied `display/library.jpg`
+beside **Offline depository, in your hands**. The image
+keeps its original proportions and scales down on phones. A copy is bundled at
+`assets/library.jpg` so the webserver can be built from its own directory; copy
+the source image there again when updating the logo. Nginx serves it at
+`/library-brand.jpg` from `/usr/share/library-web/library.jpg` in the container,
+so regenerating pages on the USB drive does not remove the logo.
+
+The home page and generated folder pages match the Data Download interface:
+dark-purple backgrounds, rounded panels, green accents, the same typography,
+and gold (`#f3b41e`) navigation highlighting. Home remains highlighted while
+browsing the local library. Available services appear as wrapping navigation
+buttons, with Downloads before Shutdown. Folder markers use light blue; file
+rows show their type and highlight on hover or keyboard focus. Empty folders
+show a message. The layout adapts to phones and includes a skip-to-files link.
+
+Folder pages show the current folder name and a **Back to parent folder** button
+above the **File / folder** table header. Top-level folders show **Back to
+library** instead. These links work even when opening a folder page directly;
+they do not depend on browser history. The home page has no Back button.
+
+The theme lives in `style.css` beside `library.py`. The generator embeds it in
+each page, so the interface needs no external fonts, JavaScript, or network
+assets. File links and detected service links still open in a new tab; folder
+links stay in the library. Service discovery, music proxying, and the Shutdown
+destination retain their existing behavior.
+
+Rebuild and recreate the webserver container to apply the theme. On startup,
+the changed template regenerates existing home and folder pages even when the
+content file count is unchanged. When copying the generator manually, copy
+`style.css` alongside it, then run `python3 /root/library.py` in the container.
 
 ## Building the Container
 
