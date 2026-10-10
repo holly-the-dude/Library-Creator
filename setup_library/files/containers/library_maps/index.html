@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -230,9 +230,14 @@
   </style>
   <!-- Load after panel styles so responsive GPS/toolbar rules can override them. -->
   <link rel="stylesheet" href="gps-control.css">
+  <link rel="stylesheet" href="map-theme.css">
+  <script src="map-ui.js" defer></script>
 </head>
 <body>
   <div id="loading">Loading map tiles...</div>
+  <div id="map"></div>
+  <button id="map-ui-toggle" type="button" aria-expanded="true" aria-controls="map-panels">Hide controls</button>
+  <div id="map-panels">
   <!-- Panels wrap together instead of competing for the same map corners. -->
   <div id="map-toolbar">
   <div id="controls">
@@ -294,7 +299,6 @@
     <p>Last checksummed NMEA sentence</p>
     <pre id="gps-detail-sentence"></pre>
   </dialog>
-  <div id="map"></div>
 
   <!-- Routing panel: pick a start and destination (by lat,lon, by clicking the
        map, or from a search result) and calculate a car route locally via
@@ -321,10 +325,11 @@
   <!-- Layer on/off toggle: groups the map style's layers into categories and
        shows/hides each via visibility. -->
   <div id="layers-control">
-    <div class="lc-head" id="layers-head"><span>Layers</span><span id="layers-caret">▸</span></div>
+    <button class="lc-head" id="layers-head" type="button" aria-expanded="false" aria-controls="layers-body"><span>Layers</span><span id="layers-caret" aria-hidden="true">▸</span></button>
     <div class="lc-body" id="layers-body"></div>
   </div>
 
+  </div>
   <script>
     // Start independently of PMTiles discovery: GPS troubleshooting should work
     // even if discovery is slow or no map files are available. Attach the single
@@ -875,6 +880,7 @@
 
       layersHead.addEventListener('click', () => {
         layersControl.classList.toggle('open');
+        layersHead.setAttribute('aria-expanded', String(layersControl.classList.contains('open')));
         layersCaret.textContent = layersControl.classList.contains('open') ? '▾' : '▸';
       });
 

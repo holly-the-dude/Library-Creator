@@ -58,6 +58,9 @@ the WiFi hotspot simultaneously.
 The Wiki is served by [Kiwix](https://kiwix.org/). The exact content depends on which
 Wikipedia snapshot was loaded onto the device.
 
+The Wiki catalog, search results, and reader toolbar use the same dark purple
+theme as Data Download. The articles retain their original formatting.
+
 ---
 
 ## Downloading content onto the Library USB drive
@@ -185,6 +188,13 @@ return it to the Library before starting up again.
 ---
 
 ## Using the Maps
+
+The map controls use the same dark purple theme as Data Download. Use **Hide
+controls** at the top right for an uncluttered map, and **Show controls** to bring
+the panels back. Controls start hidden on phones; when shown, they form one
+scrollable column. Your browser remembers the choice. GPS tracking and routes
+continue while hidden, and you can still pan and pinch to zoom. Map attribution
+stays visible.
 
 - Click **Maps** on the home page.
 - Use the dropdown to pick a state or region.

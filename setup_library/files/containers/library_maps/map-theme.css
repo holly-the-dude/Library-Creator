@@ -1,0 +1,120 @@
+/* Library theme; loaded after the map and GPS layout styles. */
+:root {
+  color-scheme: dark;
+  --bg: #0e0a1f;
+  --surface: #1c1638;
+  --surface-2: #241c47;
+  --border: #352a5e;
+  --text: #ece8f7;
+  --dim: #b1a8cf;
+  --accent: #33d17a;
+  --selected: #f3b41e;
+  --blue: #4c8dff;
+}
+body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
+#map { height: 100vh; height: 100dvh; }
+[hidden] { display: none !important; }
+#map-toolbar { top: 68px; }
+#controls, #search-control, #gps-control, #route-control, #layers-control, #loading, #gps-status-dialog {
+  box-sizing: border-box;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px #0e0a1f55;
+  line-height: 1.5;
+}
+#controls, #search-control, #gps-control, #route-control { padding: 14px; }
+#controls select, #search-control input, #gps-control input, #route-control input {
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  min-height: 40px;
+  font: inherit;
+}
+#controls select { max-width: 100%; }
+input::placeholder { color: var(--dim); opacity: 1; }
+#map-ui-toggle, #search-control button, #gps-control button, #route-control button, #gps-status-dialog button, #layers-head {
+  font: 700 14px/1.4 "Segoe UI", system-ui, sans-serif;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 12px;
+  min-height: 40px;
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+#map-ui-toggle {
+  position: absolute;
+  z-index: 1500;
+  top: max(10px, env(safe-area-inset-top));
+  right: max(10px, env(safe-area-inset-right));
+  min-height: 44px;
+  background: var(--selected);
+  color: #1c1638;
+  border-color: #ffd675;
+  box-shadow: inset 0 -3px 0 #bd8507, 0 2px 10px #0004;
+}
+#search-control #search-btn, #gps-control #gps-go, #route-control button.primary, #route-control button.primary:hover {
+  background: var(--accent); color: var(--bg); border-color: transparent;
+}
+#gps-control #gps-status { background: var(--surface-2); color: var(--text); }
+#gps-control button[aria-pressed="true"], #route-control button.pin.active, #layers-head[aria-expanded="true"] {
+  color: #1c1638; background: var(--selected); border-color: #ffd675;
+}
+button:hover { filter: brightness(1.1); }
+#map-ui-toggle:hover { filter: none; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible,
+#gps-control button:focus-visible, #gps-status-dialog button:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 3px;
+}
+#search-hint, #search-results .result-item .result-type, #search-results .no-results,
+#gps-summary, #route-status, #gps-status-dialog dt, #gps-status-dialog .gps-help { color: var(--dim); }
+#search-results .result-item { border-color: var(--border); padding: 10px; }
+#search-results .result-item .result-name { color: var(--text); }
+#search-results .result-item:hover { background: #493665; box-shadow: inset 3px 0 var(--selected); }
+#gps-control #gps-error { background: #35203a; color: #ffb545; border: 1px solid #ffb545; border-radius: 8px; }
+#route-control h3 { font-size: 18px; }
+#layers-control .lc-head { width: 100%; text-align: left; }
+#layers-control input[type="checkbox"] { accent-color: var(--selected); }
+#layers-control label:has(input:checked) { color: var(--text); }
+#gps-status-dialog::backdrop { background: #0e0a1fcc; }
+#gps-detail-sentence { background: var(--bg); color: var(--text); border-radius: 8px; }
+.gps-marker-label { background: var(--surface); color: var(--text); border-color: var(--border); }
+.maplibregl-popup-content { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 12px; }
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip { border-top-color: var(--surface); }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip { border-bottom-color: var(--surface); }
+.maplibregl-popup-close-button { color: var(--text); }
+.maplibregl-ctrl-group { background: var(--surface); border: 1px solid var(--border); border-radius: 9px; }
+.maplibregl-ctrl-group button + button { border-color: var(--border); }
+.maplibregl-ctrl-group button:hover { background: var(--surface-2); }
+.maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
+/* Keep attribution visible, as required by the map data providers. */
+.map-ui-hidden .maplibregl-ctrl-group,
+.map-ui-hidden .maplibregl-ctrl-scale,
+.map-ui-hidden .maplibregl-popup,
+.map-ui-hidden .gps-marker-label { display: none !important; }
+@media (max-width: 700px) {
+  #map-panels {
+    position: absolute; top: 66px; left: 10px; right: 10px; z-index: 1000;
+    display: flex; flex-direction: column; gap: 10px;
+    max-width: 380px; max-height: calc(100vh - 100px); max-height: calc(100dvh - 100px);
+    overflow-y: auto; overscroll-behavior: contain; pointer-events: none;
+    padding: 3px;
+  }
+  #map-panels > * { pointer-events: auto; flex-shrink: 0; }
+  #map-toolbar { position: static; display: flex; flex-direction: column; gap: 10px; }
+  #map-toolbar #controls, #map-toolbar #search-control, #map-toolbar #gps-control {
+    width: 100%; max-width: none; min-width: 0; margin: 0; padding: 12px;
+  }
+  #controls select { width: 100%; margin-top: 6px; }
+  #route-control, #layers-control, #layers-control.open {
+    position: static; width: 100%; max-width: none; max-height: none; margin: 0;
+  }
+  #route-directions { max-height: 25vh; overflow-y: auto; }
+  #search-control input, #gps-control input, #route-control input { font-size: 16px; }
+}

@@ -7,9 +7,40 @@ The wiki container runs [kiwix-serve](https://github.com/kiwix/kiwix-tools) to p
 ```
 wiki/
 ├── Containerfile                            # Container build instructions
+├── build_theme.py                           # Generate customized CSS resources
+├── library-theme.css                        # Library colors and control styles
 ├── kiwix-tools_linux-aarch64-3.5.0-1.tar.gz  # Pre-compiled kiwix binaries (arm64)
 ├── start_server                             # Shell script to start kiwix-serve
 └── README.md
+```
+
+## Library appearance
+
+The catalog, search results, autocomplete suggestions, and reader toolbar share
+Data Download's dark purple panels, green accents, and gold (`#f3b41e`) selection
+highlights. Catalog filters wrap on small screens. Articles inside the ZIM files
+keep their original formatting and colors.
+
+The image build runs `build_theme.py` to append `library-theme.css` to the original
+stylesheets embedded in the bundled Kiwix binary. This preserves its layout and
+responsive rules. The helper reads the ARM binary as data and checks that all
+four expected stylesheets exist before writing any output. If the binary is
+upgraded, review the extraction rules and theme against its new UI.
+
+The image sets `KIWIX_SERVE_CUSTOMIZED_RESOURCES` to the generated resource manifest
+at `/opt/library-wiki/skin/resources.txt`. Kiwix's
+[native custom-resource support](https://github.com/kiwix/libkiwix/blob/main/src/server/internalServer.cpp)
+serves these local CSS files, including when the playbooks invoke `kiwix-serve`
+directly. No proxy, ZIM modifications, or runtime internet access are needed.
+
+Rebuild the `wiki` image and recreate its container to install the theme.
+If an existing browser still shows the old colors, clear its cached files or
+perform a hard refresh.
+
+Validate resource generation without running ARM code:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```
 
 ## Building the Container

@@ -7,6 +7,10 @@
 ARG BASE_IMAGE=localhost/rasbase_master:latest
 FROM ${BASE_IMAGE}
 
+# Build the skin from the exact bundled binary without running ARM code.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy the pre-compiled kiwix-tools binary archive (aarch64 static builds)
 COPY kiwix-tools_linux-aarch64-3.5.0-1.tar.gz /tmp/kiwix-tools.tar.gz
 
@@ -17,6 +21,12 @@ RUN tar -xzf /tmp/kiwix-tools.tar.gz -C /tmp && \
     cp /tmp/kiwix-tools_linux-aarch64-3.5.0-1/kiwix-search /usr/local/bin/ && \
     chmod +x /usr/local/bin/kiwix-* && \
     rm -rf /tmp/kiwix-tools*
+
+COPY build_theme.py library-theme.css /opt/library-wiki/
+RUN python3 /opt/library-wiki/build_theme.py /usr/local/bin/kiwix-serve \
+    /opt/library-wiki/library-theme.css /opt/library-wiki/skin
+# Image-level environment also covers playbooks that invoke kiwix-serve directly.
+ENV KIWIX_SERVE_CUSTOMIZED_RESOURCES=/opt/library-wiki/skin/resources.txt
 
 # Copy the start script
 COPY start_server /root/start_server

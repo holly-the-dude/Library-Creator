@@ -42,6 +42,7 @@ RUN mkdir -p /var/www/html/vendor
 COPY index.html /var/www/html/index.html
 # Serve the GPS controls locally so hotspot clients need no external libraries.
 COPY gps-control.js gps-control.css /var/www/html/
+COPY map-ui.js map-theme.css /var/www/html/
 # Keep the service beside its parser for Python imports, outside the web root.
 COPY read_gps.py gps_service.py /usr/local/lib/library_maps/
 # Keep bundled fonts/sprites outside the mount, then fill missing USB assets at

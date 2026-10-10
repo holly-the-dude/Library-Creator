@@ -4,6 +4,25 @@ A lightweight PMTiles map tile server for Raspberry Pi, based on `rasbase_master
 
 Serves `.pmtiles` files via nginx with HTTP range request support. Includes a built-in MapLibre GL JS viewer with a state selector, in-tile place/street search, a map-layer on/off panel, and optional car routing (turn-by-turn directions) via a bundled GraphHopper service. It is fully offline: no geocoder/Photon and no internet/CDN access are required at runtime.
 
+## Appearance and phone controls
+
+The controls share Data Download's dark purple panels, green action buttons, and
+gold (`#f3b41e`) selected buttons. The basemap keeps its existing colors.
+
+Use **Hide controls** in the top-right corner to hide the map selector, search,
+GPS, directions, layers, zoom buttons, and popup labels. **Show controls** stays
+available to bring them back. GPS tracking, route lines, markers, and entered
+values are preserved; map attribution remains visible. You can still pan and
+pinch to zoom while the controls are hidden.
+
+On phones (screens up to 700px wide), controls start hidden. When shown, panels
+form one scrollable column. Wider screens start with the controls visible. Your
+choice is remembered in the browser when local storage is available.
+
+Rebuild the `library_maps` image and recreate its container to install the skin
+and toggle. The files are bundled locally; no internet is needed to use them.
+Controller checks: `node --test test_gps_control.js test_map_ui.js`.
+
 ## Automatic font and sprite setup
 
 The image bundles the working Library map fonts and version 4 light sprites.

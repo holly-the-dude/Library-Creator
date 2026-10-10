@@ -1,0 +1,82 @@
+/* Library appearance for the Kiwix shell only; archived articles keep their CSS. */
+:root {
+  color-scheme: dark;
+  --library-bg: #0e0a1f;
+  --library-panel: #1c1638;
+  --library-raised: #241c47;
+  --library-border: #352a5e;
+  --library-text: #ece8f7;
+  --library-dim: #b1a8cf;
+  --library-green: #33d17a;
+  --library-gold: #f3b41e;
+}
+body { background: var(--library-bg); color: var(--library-text); font: 16px/1.6 "Segoe UI", system-ui, sans-serif; }
+a, a:visited { color: var(--library-green); }
+::selection { background: var(--library-gold); color: #1c1638; }
+input, select, button { font-family: inherit; }
+input::placeholder { color: var(--library-dim); opacity: 1; }
+a:focus-visible, input:focus-visible, button:focus-visible, select:focus-visible {
+  outline: 2px solid #4c8dff !important; outline-offset: 3px;
+}
+/* Catalog: preserve Kiwix's filtering and Isotope card layout. */
+.kiwixNav { background: var(--library-panel); border-bottom: 1px solid var(--library-border); padding: 24px; height: auto; }
+.kiwixNav__filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.kiwixNav__select { background: var(--library-raised); border-color: var(--library-border); border-radius: 9px; height: 44px; }
+.kiwixNav__select::after { background: var(--library-raised); color: var(--library-text); }
+.kiwixNav__kiwixFilter, .kiwixNav__kiwixFilter option { background: var(--library-bg); color: var(--library-text); font-size: 14px; }
+.kiwixNav__kiwixFilter { height: 44px; padding-right: 42px; }
+.kiwixNav__SearchForm { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.kiwixSearch { background-color: var(--library-bg); color: var(--library-text); border-color: var(--library-border); height: 44px; margin: 0; font-size: 16px; }
+.kiwixButton { color: var(--library-bg); background: var(--library-green); border-color: transparent; border-radius: 9px; height: 44px; margin: 0; font-weight: 700; }
+.kiwixButtonHover:hover { background: #4ade8c; }
+.tagFilterLabel { background: var(--library-gold); color: #1c1638; height: auto; border-radius: 9px; }
+.tagFilterLabel .tag__link { color: #1c1638; }
+.kiwixHomeBody__results { color: var(--library-dim); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; }
+.book__wrapper, .modal { background: var(--library-panel); color: var(--library-text); border: 1px solid var(--library-border); border-radius: 14px; }
+.book__wrapper:hover { background: var(--library-raised); border-color: var(--library-gold); transform: none; }
+.book__header, .book__description, .book__tags, .book__languageTag, .modal { font-family: "Segoe UI", system-ui, sans-serif; }
+.book__header { color: var(--library-text); }
+.book__description, .tag__link, .kiwixfooter { color: var(--library-dim); }
+.book__languageTag { background: #d9efff; color: #173851; }
+.book__download > span { background: var(--library-green); color: var(--library-bg); border-radius: 5px; }
+.modal-heading { background: var(--library-raised); border-color: var(--library-border); border-radius: 14px 14px 0 0; }
+.modal-content a, .modal-content a > div, .modal-close-button { color: var(--library-text); }
+.modal-close-button { background: var(--library-raised); }
+.modal-wrapper { background: #0e0a1fcc; }
+.fadeOut { background: linear-gradient(180deg, transparent 0%, var(--library-bg) 100%); }
+.loader-spinner { border-color: var(--library-border); border-top-color: var(--library-green); }
+.kiwixfooter > a, .noResults > a { color: var(--library-green); }
+/* Viewer toolbar. Upstream uses !important here, so match its specificity. */
+#kiwixtoolbar { background: var(--library-panel); color: var(--library-text); border-color: var(--library-border); font-family: "Segoe UI", system-ui, sans-serif; }
+.kiwix #kiwixtoolbar button, .kiwix #kiwixtoolbar input[type="submit"] {
+  background-color: var(--library-raised) !important; color: var(--library-text) !important;
+  border-color: var(--library-border) !important; border-radius: 8px !important;
+}
+.kiwix #kiwixtoolbar button:hover, .kiwix #kiwixtoolbar button:active {
+  background-color: var(--library-gold) !important; color: #1c1638 !important;
+}
+.kiwix #kiwixtoolbar #kiwixsearchform input[type="text"] {
+  background-color: var(--library-bg) !important; color: var(--library-text) !important;
+  border-color: var(--library-border) !important; border-radius: 8px !important;
+}
+label[for="kiwix_button_show_toggle"] img { filter: invert(1); }
+.autoComplete_wrapper > ul { background: var(--library-panel); border: 1px solid var(--library-border); border-radius: 9px; }
+.autoComplete_wrapper > ul > li { background: var(--library-panel); color: var(--library-text); }
+.autoComplete_wrapper > ul > li:hover, .autoComplete_wrapper > ul > li[aria-selected="true"] { background: var(--library-gold); color: #1c1638; }
+.autoComplete_wrapper > ul > li mark { background: transparent; color: inherit; font-weight: 700; }
+/* The iframe contains the unmodified ZIM article and its own theme. */
+#content_iframe { color-scheme: light; background: white; }
+/* Full-text search results and pagination. */
+.results li { background: var(--library-panel); border: 1px solid var(--library-border); border-radius: 14px; padding: 16px; margin: 12px 0; }
+.results a, .informations { color: var(--library-green); }
+cite { color: var(--library-dim); }
+.footer a, .footer span { border-radius: 9px; border: 1px solid var(--library-border); }
+.footer a:hover { background: var(--library-raised); }
+.footer .selected { background: var(--library-gold); color: #1c1638; }
+@media (max-width: 590px) {
+  .kiwixNav { padding: 16px 14px; }
+  .kiwixNav__filters { gap: 10px; }
+  .kiwixNav__select, .kiwixSearch { width: 100%; }
+  .kiwixButton { width: auto; min-width: 100px; padding: 0 16px; }
+  .tagFilterLabel { padding: 10px; }
+}
