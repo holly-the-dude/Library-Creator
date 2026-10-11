@@ -47,17 +47,27 @@ input::placeholder { color: var(--dim); opacity: 1; }
   color: var(--text);
   cursor: pointer;
 }
+/* Compact hide/show pill — small, unobtrusive */
 #map-ui-toggle {
   position: absolute;
   z-index: 1500;
   top: max(10px, env(safe-area-inset-top));
   right: max(10px, env(safe-area-inset-right));
-  min-height: 44px;
-  background: var(--selected);
-  color: #1c1638;
-  border-color: #ffd675;
-  box-shadow: inset 0 -3px 0 #bd8507, 0 2px 10px #0004;
+  min-height: 28px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 28px;
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--dim);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 8px #0006;
+  letter-spacing: .04em;
+  text-transform: uppercase;
 }
+#map-ui-toggle[aria-expanded="true"] { color: var(--text); }
 #search-control #search-btn, #gps-control #gps-go, #route-control button.primary, #route-control button.primary:hover {
   background: var(--accent); color: var(--bg); border-color: transparent;
 }
@@ -66,7 +76,7 @@ input::placeholder { color: var(--dim); opacity: 1; }
   color: #1c1638; background: var(--selected); border-color: #ffd675;
 }
 button:hover { filter: brightness(1.1); }
-#map-ui-toggle:hover { filter: none; }
+#map-ui-toggle:hover { filter: brightness(1.15); }
 button:disabled { opacity: .5; cursor: not-allowed; }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible,
 #gps-control button:focus-visible, #gps-status-dialog button:focus-visible {
@@ -98,23 +108,186 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .map-ui-hidden .maplibregl-ctrl-scale,
 .map-ui-hidden .maplibregl-popup,
 .map-ui-hidden .gps-marker-label { display: none !important; }
+
+/* =====================================================================
+   MOBILE BOTTOM NAV BAR  (≤ 700 px)
+   Panels become popovers that slide up from a fixed bottom tab bar.
+   Desktop layout is completely untouched.
+   ===================================================================== */
+#mobile-nav, #mobile-backdrop, .mobile-panel { display: none; }
 @media (max-width: 700px) {
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+  body { position: fixed; inset: 0; }
+
+  /* Controls leave the desktop toolbar when they move into a sheet. */
+  .mobile-panel #controls, .mobile-panel #search-control, .mobile-panel #gps-control {
+    position: static;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+  }
+  .mobile-panel #gps-control { flex-direction: column; align-items: stretch; }
+  /* The original #map-panels wrapper is repurposed as the popover host.
+     Individual panels are shown/hidden by JS, not as a scrolling list. */
   #map-panels {
-    position: absolute; top: 66px; left: 10px; right: 10px; z-index: 1000;
-    display: flex; flex-direction: column; gap: 10px;
-    max-width: 380px; max-height: calc(100vh - 100px); max-height: calc(100dvh - 100px);
-    overflow-y: auto; overscroll-behavior: contain; pointer-events: none;
-    padding: 3px;
+    position: fixed;
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    left: 0; right: 0;
+    z-index: 1100;
+    pointer-events: none;
   }
-  #map-panels > * { pointer-events: auto; flex-shrink: 0; }
-  #map-toolbar { position: static; display: flex; flex-direction: column; gap: 10px; }
-  #map-toolbar #controls, #map-toolbar #search-control, #map-toolbar #gps-control {
-    width: 100%; max-width: none; min-width: 0; margin: 0; padding: 12px;
+  #map-panels > * { pointer-events: none; }
+
+  /* Each panel slides up as a sheet above the nav bar */
+  #map-toolbar { position: static; display: contents; }
+
+  .mobile-panel {
+    box-sizing: border-box;
+    display: none;
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    z-index: 1200;
+    pointer-events: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -4px 32px #0e0a1f99;
+    padding: 16px 16px calc(8px + env(safe-area-inset-bottom));
+    max-height: 55vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    animation: slideUp 0.18s ease-out;
   }
-  #controls select { width: 100%; margin-top: 6px; }
-  #route-control, #layers-control, #layers-control.open {
-    position: static; width: 100%; max-width: none; max-height: none; margin: 0;
+  .mobile-panel.is-open {
+    display: block;
   }
-  #route-directions { max-height: 25vh; overflow-y: auto; }
-  #search-control input, #gps-control input, #route-control input { font-size: 16px; }
+  @keyframes slideUp {
+    from { transform: translateY(20px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+
+  /* Tap or swipe this handle down to close; the bottom tabs stay available. */
+  .mobile-panel-handle {
+    display: block;
+    width: 100%;
+    height: 32px;
+    padding: 0;
+    margin: -8px 0 6px;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    touch-action: none;
+  }
+  .mobile-panel-handle::before {
+    content: '';
+    display: block;
+    width: 36px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 0 auto;
+  }
+
+  /* The fixed bottom nav bar */
+  #mobile-nav {
+    box-sizing: border-box;
+    display: flex;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1300;
+    height: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -2px 16px #0e0a1f88;
+    align-items: stretch;
+    justify-content: space-around;
+  }
+  .mobile-nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    color: var(--dim);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    padding: 0;
+    min-height: 0;
+    cursor: pointer;
+    border-radius: 0;
+    text-transform: uppercase;
+  }
+  .mobile-nav-btn .nav-icon {
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+  }
+  .mobile-nav-btn[aria-pressed="true"] {
+    color: var(--selected);
+    filter: none;
+  }
+  .mobile-nav-btn:hover { filter: brightness(1.2); }
+  .mobile-nav-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: -3px; }
+
+  /* Inside each sheet, full-width inputs */
+  .mobile-panel select,
+  .mobile-panel input[type="text"],
+  .mobile-panel input[type="search"],
+  .mobile-panel #route-control input,
+  .mobile-panel #gps-control input,
+  .mobile-panel #search-control input {
+    width: 100%;
+    font-size: 16px; /* prevent iOS zoom */
+    margin-top: 6px;
+    box-sizing: border-box;
+  }
+  .mobile-panel .search-row { display: flex; gap: 8px; }
+  .mobile-panel .search-row input { flex: 1; }
+  .mobile-panel .rrow { display: flex; gap: 8px; margin-bottom: 8px; }
+  .mobile-panel .rrow input { flex: 1; }
+
+  /* Route directions scroll inside sheet */
+  #route-directions { max-height: 20vh; overflow-y: auto; }
+
+  /* Layers expand in-place */
+  #layers-control { position: static; width: 100%; max-height: none; border: none; box-shadow: none; background: none; }
+  #layers-control .lc-body { display: block !important; }
+  #layers-control .lc-head { display: none; }
+
+  /* Collapse the "loading" overlay to center as normal */
+  #loading { font-size: 15px; }
+
+  /* Map takes full height; nav bar sits on top via fixed */
+  #map { height: 100dvh; }
+
+  /* Dim backdrop when a panel is open */
+  #mobile-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1190;
+    background: #0e0a1f66;
+  }
+  #mobile-backdrop.is-open { display: block; }
+
+  /* Compact hide/show pill repositioned above nav bar */
+  #map-ui-toggle {
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    right: max(10px, env(safe-area-inset-right));
+    font-size: 10px;
+    height: 24px;
+    min-height: 24px;
+    line-height: 24px;
+    padding: 0 9px;
+  }
+
+  /* GPS control horizontal in sheet */
+  #gps-control .gps-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  #gps-control .gps-coordinates input { flex: 1; min-width: 80px; }
 }

@@ -91,17 +91,70 @@
   padding: 2px 5px; border: 1px solid #adb9c4; border-radius: 3px;
   background: white; color: #243348; white-space: nowrap; font-size: 11px; font-weight: 600;
 }
-/* Small screens get a full-width location panel and a shorter directions panel.
- * Layers move below directions, leaving navigation accessible on the right. */
+/* Small screens: controls live inside .mobile-panel sheets above the nav bar.
+ * All absolute/fixed positioning overrides from the desktop layout are reset
+ * so the panels render as normal block content inside the scrollable sheets. */
 @media (max-width: 700px) {
-  #map-toolbar { gap: 6px; }
-  #map-toolbar #controls { padding: 8px; }
-  #map-toolbar #search-control { flex: 1; min-width: 185px; padding: 8px; }
-  #search-hint { display: none; }
-  #map-toolbar #gps-control { width: 100%; margin-left: 0; padding: 8px; }
-  #gps-control .gps-coordinates input { width: 65px; }
-  #route-control { bottom: 46px; width: calc(100vw - 82px); max-width: 320px; max-height: 30vh; padding: 8px; box-sizing: border-box; }
-  #layers-control { bottom: 8px; right: auto; left: 10px; width: 170px; }
-  #layers-control.open { z-index: 1001; max-height: 40vh; overflow-y: auto; }
-  #gps-status-dialog dl { grid-template-columns: 120px 1fr; }
+  /* Controls moved into sheets — strip desktop positioning */
+  #map-toolbar #controls,
+  #map-toolbar #search-control,
+  #map-toolbar #gps-control {
+    position: static;
+    width: 100%;
+    margin: 0;
+    padding: 10px 12px;
+    box-sizing: border-box;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+  }
+
+  /* Search hint is useful inside the sheet */
+  #search-hint { display: block; font-size: 12px; }
+
+  /* GPS coordinate inputs fill available width */
+  #gps-control .gps-coordinates input { width: 100%; min-width: 0; }
+
+  /* Route control: static inside its sheet, no bottom positioning */
+  #route-control {
+    position: static;
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    padding: 10px 12px;
+    box-sizing: border-box;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: none;
+  }
+
+  /* Layers control: static, no right/bottom anchor */
+  #layers-control {
+    position: static;
+    width: 100%;
+    max-height: none;
+    border: none;
+    box-shadow: none;
+    background: none;
+  }
+  /* Always expand layers body inside the sheet */
+  #layers-control .lc-body { display: block !important; padding: 4px 0 8px; }
+  #layers-control .lc-head { display: none; }
+
+  /* GPS status dialog: narrower dl on small viewports */
+  #gps-status-dialog dl { grid-template-columns: 110px 1fr; }
+
+  /* GPS error inline inside sheet */
+  #gps-control #gps-error {
+    position: static;
+    display: block;
+    padding: 8px 10px;
+    box-shadow: none;
+    max-width: none;
+  }
+
+  /* GPS summary fits full width */
+  #gps-summary { max-width: none; }
 }

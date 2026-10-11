@@ -26,6 +26,9 @@ msg_step() { printf '%s\n' "$1"; }
 separator() { :; }
 pause() { :; }
 confirm() { return "$CONFIRM_STATUS"; }
+resolve_repository() { printf '%s\n' "$CHECKOUT_PATH"; }
+ensure_trixie() { trace os-check "$@"; return "$OS_STATUS"; }
+REPOSITORY_FILE=./repository-path
 command() {
     if [[ "$1" == -v && "$2" == git ]]; then
         return "$GIT_MISSING"
@@ -45,7 +48,8 @@ exec 3>&1
 '''
         shell += match.group() + '\ndo_reinstall\nprintf "RETURN=%s\\n" "$?"\n'
         environment = {"PATH": "/nonexistent", "CONFIRM_STATUS": "0", "GIT_MISSING": "0",
-                       "CHECKOUT_STATUS": "0", "PULL_STATUS": "0", **settings}
+                       "CHECKOUT_STATUS": "0", "PULL_STATUS": "0", "OS_STATUS": "0",
+                       "CHECKOUT_PATH": "/root/Library-Creator", **settings}
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(["/bin/bash", "--noprofile", "--norc", "-c", shell],
                                     cwd=directory, env=environment, capture_output=True,
@@ -60,6 +64,7 @@ exec 3>&1
         self.assertEqual(calls, [
             ["git", "-C", "/root/Library-Creator", "rev-parse", "--is-inside-work-tree"],
             ["git", "-C", "/root/Library-Creator", "pull", "--ff-only"],
+            ["os-check", "/root/Library-Creator"],
             ["rm", "-f", "/root/.0boot", "/root/.firstboot", "/root/.secondboot", "/root/.thirdboot", "/root/start_library"],
             ["rm", "-rf", "/root/install", "/root/display"],
             ["podman", "stop", "--all"],
@@ -68,6 +73,16 @@ exec 3>&1
         ])
         self.assertIn("Run /root/Library-Creator/bootstrap again", output)
         self.assertNotIn("RETURN=", output)  # Successful cleanup still exits.
+
+    def test_lowercase_checkout_is_used_for_pull_and_restart_instructions(self):
+        calls, output = self.run_reinstall(CHECKOUT_PATH="/root/library-creator")
+        self.assertEqual(calls[1], ["git", "-C", "/root/library-creator", "pull", "--ff-only"])
+        self.assertIn("Run /root/library-creator/bootstrap again", output)
+
+    def test_failed_or_reboot_pending_os_preflight_prevents_cleanup(self):
+        calls, output = self.run_reinstall(OS_STATUS="1")
+        self.assertEqual([call[0] for call in calls], ["git", "git", "os-check"])
+        self.assertIn("RETURN=1", output)
 
     def test_failed_pull_does_not_start_cleanup(self):
         calls, output = self.run_reinstall(PULL_STATUS="1")

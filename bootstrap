@@ -21,6 +21,62 @@ NC='\033[0m' # No Color
 ###########################################################################
 # Helper Functions
 ###########################################################################
+# Capture this before any installer stage changes the working directory.
+BOOTSTRAP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+REPOSITORY_FILE=/root/.library-repository
+
+is_library_checkout() {
+    [[ -e "$1/.git" && -f "$1/bootstrap" && -d "$1/setup_library" ]]
+}
+
+resolve_repository() {
+    local saved candidate
+    local -a matches=()
+    # Prefer the checkout explicitly launched, regardless of its folder name.
+    if is_library_checkout "$BOOTSTRAP_DIR"; then
+        printf '%s\n' "$BOOTSTRAP_DIR"
+        return 0
+    fi
+    if [[ -f "$REPOSITORY_FILE" ]]; then
+        IFS= read -r saved < "$REPOSITORY_FILE"
+        if is_library_checkout "$saved"; then
+            printf '%s\n' "$saved"
+            return 0
+        fi
+    fi
+    if is_library_checkout "$PWD"; then
+        printf '%s\n' "$PWD"
+        return 0
+    fi
+    # Compatibility with a standalone /root/bootstrap and older installations.
+    for candidate in /root/*; do
+        if [[ "${candidate##*/}" =~ ^[Ll][Ii][Bb][Rr][Aa][Rr][Yy]-[Cc][Rr][Ee][Aa][Tt][Oo][Rr]$ ]] && is_library_checkout "$candidate"; then
+            matches+=("$candidate")
+        fi
+    done
+    if [[ ${#matches[@]} == 1 ]]; then
+        printf '%s\n' "${matches[0]}"
+        return 0
+    fi
+    msg_error "Cannot select a unique Library checkout. Run bootstrap directly from the intended clone." >&2
+    return 1
+}
+
+ensure_trixie() {
+    local repository="$1" status
+    if ! command -v python3 >/dev/null 2>&1; then
+        msg_error "Python 3 is required for the OS preflight. Install python3 and retry."
+        return 1
+    fi
+    python3 "$repository/setup_library/upgrade_os.py"
+    status=$?
+    if [[ $status == 10 ]]; then
+        msg_warn "OS upgrade complete. Reboot the Pi, then rerun $repository/bootstrap and select the same install option."
+        return 1
+    fi
+    return "$status"
+}
+
 banner() {
     echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║${WHITE}       Library Bootstrap Installer                ${CYAN}║${NC}"
@@ -230,7 +286,8 @@ check_uptime() {
 # Reinstall / Upgrade Function
 ###########################################################################
 do_reinstall() {
-    local repository="/root/Library-Creator"
+    local repository
+    repository=$(resolve_repository) || return 1
     msg_info "This will update $repository with git pull before reinstalling."
     msg_warn "This will remove all installation progress and container images!"
     separator
@@ -256,6 +313,8 @@ do_reinstall() {
             return 1
         fi
         msg_ok "Repository updated"
+        printf '%s\n' "$repository" > "$REPOSITORY_FILE" || return 1
+        ensure_trixie "$repository" || return 1
         msg_step "Removing boot flags and install files..."
         rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot /root/start_library
         rm -rf /root/install /root/display
@@ -282,6 +341,15 @@ do_first_boot() {
         if ! confirm "Run again anyway?"; then
             return
         fi
+    fi
+
+    local repository
+    repository=$(resolve_repository) || return 1
+    printf '%s\n' "$repository" > "$REPOSITORY_FILE" || return 1
+    # Complete OS preflight before flags, USB formatting, or container changes.
+    ensure_trixie "$repository" || return 1
+    if [[ "$BOOTSTRAP_DIR/bootstrap" != /root/bootstrap ]]; then
+        cp "$repository/bootstrap" /root/bootstrap || return 1
     fi
 
     msg_step "Starting First Boot Process"
@@ -408,7 +476,7 @@ do_first_boot() {
 	    # setup_library/files/usb_base
 	    sleep 4
 	    cd /Library
-            tar xvzf /root/Library-Creator/setup_library/files/Library_USB.tar
+            tar xvzf "$repository/setup_library/files/Library_USB.tar"
 	    cd /Library/wiki
 	    ./getwiki.sh
             msg_ok "USB formatted and mounted and base files put there"
@@ -429,8 +497,8 @@ do_first_boot() {
     ######################################################
     # since we did a git clone were going to move it here
     # #####################################################
-    cp -r /root/Library-Creator/* .
-    cp  /root/Library-Creator/bootstrap /root/.
+    cp -r "$repository/"* . || return 1
+    cp "$repository/bootstrap" /root/bootstrap || return 1
     # ####################################################
     # Build containers before continuing the build
     # ####################################################
@@ -860,6 +928,9 @@ ASEOF
 # Second Boot
 ###########################################################################
 do_second_boot() {
+    local repository
+    repository=$(resolve_repository) || return 1
+    ensure_trixie "$repository" || return 1
     if test -e "/root/.secondboot"; then
         msg_warn "Second boot has already been completed"
         if ! confirm "Run again anyway?"; then
@@ -921,6 +992,9 @@ do_second_boot() {
 # Third Boot
 ###########################################################################
 do_third_boot() {
+    local repository
+    repository=$(resolve_repository) || return 1
+    ensure_trixie "$repository" || return 1
     if test -e "/root/.thirdboot"; then
         msg_warn "Third boot has already been completed"
         if ! confirm "Run again anyway?"; then
@@ -1016,6 +1090,11 @@ auto_run() {
 ###########################################################################
 # Main Program
 ###########################################################################
+
+if [[ $EUID != 0 ]]; then
+    msg_error "Run bootstrap as root (sudo bash /path/to/your/clone/bootstrap)."
+    exit 1
+fi
 
 # Handle --auto flag for crontab execution
 if [ "$1" == "--auto" ]; then

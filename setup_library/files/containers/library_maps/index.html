@@ -236,7 +236,7 @@
 <body>
   <div id="loading">Loading map tiles...</div>
   <div id="map"></div>
-  <button id="map-ui-toggle" type="button" aria-expanded="true" aria-controls="map-panels">Hide controls</button>
+  <button id="map-ui-toggle" type="button" aria-expanded="true" aria-controls="map-panels">Hide</button>
   <div id="map-panels">
   <!-- Panels wrap together instead of competing for the same map corners. -->
   <div id="map-toolbar">
@@ -330,6 +330,36 @@
   </div>
 
   </div>
+
+  <!-- ── Mobile bottom nav bar (hidden on desktop via CSS) ── -->
+  <!-- Backdrop dims the map when a panel sheet is open -->
+  <div id="mobile-backdrop" aria-hidden="true"></div>
+
+  <!-- The fixed tab bar; JS shows/hides the matching .mobile-panel sheet -->
+  <nav id="mobile-nav" aria-label="Map controls">
+    <button class="mobile-nav-btn" id="mnav-map" type="button" aria-pressed="false" aria-controls="mpanel-map">
+      <span class="nav-icon" aria-hidden="true">🗺️</span>Map
+    </button>
+    <button class="mobile-nav-btn" id="mnav-search" type="button" aria-pressed="false" aria-controls="mpanel-search">
+      <span class="nav-icon" aria-hidden="true">🔍</span>Search
+    </button>
+    <button class="mobile-nav-btn" id="mnav-gps" type="button" aria-pressed="false" aria-controls="mpanel-gps">
+      <span class="nav-icon" aria-hidden="true">📍</span>GPS
+    </button>
+    <button class="mobile-nav-btn" id="mnav-route" type="button" aria-pressed="false" aria-controls="mpanel-route">
+      <span class="nav-icon" aria-hidden="true">🧭</span>Route
+    </button>
+    <button class="mobile-nav-btn" id="mnav-layers" type="button" aria-pressed="false" aria-controls="mpanel-layers">
+      <span class="nav-icon" aria-hidden="true">⚙️</span>Layers
+    </button>
+  </nav>
+
+  <!-- Panel sheets — JS moves the real control content into these on mobile -->
+  <div class="mobile-panel" id="mpanel-map" role="region" aria-label="Map selection"></div>
+  <div class="mobile-panel" id="mpanel-search" role="region" aria-label="Search"></div>
+  <div class="mobile-panel" id="mpanel-gps" role="region" aria-label="GPS location"></div>
+  <div class="mobile-panel" id="mpanel-route" role="region" aria-label="Directions"></div>
+  <div class="mobile-panel" id="mpanel-layers" role="region" aria-label="Map layers"></div>
   <script>
     // Start independently of PMTiles discovery: GPS troubleshooting should work
     // even if discovery is slow or no map files are available. Attach the single
@@ -791,6 +821,7 @@
         rDestPin.classList.remove('active');
         map.getCanvas().style.cursor = pinMode ? 'crosshair' : '';
         setRStatus(pinMode ? 'Click the map to set the start point.' : 'Set a start and destination, then click Route.');
+        if (pinMode) document.dispatchEvent(new CustomEvent('library-route-pick-start'));
       });
       rDestPin.addEventListener('click', () => {
         pinMode = pinMode === 'dest' ? null : 'dest';
@@ -798,12 +829,15 @@
         rStartPin.classList.remove('active');
         map.getCanvas().style.cursor = pinMode ? 'crosshair' : '';
         setRStatus(pinMode ? 'Click the map to set the destination.' : 'Set a start and destination, then click Route.');
+        if (pinMode) document.dispatchEvent(new CustomEvent('library-route-pick-start'));
       });
 
       map.on('click', (e) => {
         if (!pinMode) return;
-        setRoutePoint(pinMode, [e.lngLat.lng, e.lngLat.lat]);
+        const which = pinMode;
+        setRoutePoint(which, [e.lngLat.lng, e.lngLat.lat]);
         setRStatus('Point set.');
+        document.dispatchEvent(new CustomEvent('library-route-pick-end', { detail: { which } }));
       });
 
       async function calcRoute() {
