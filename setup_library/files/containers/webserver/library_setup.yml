@@ -108,7 +108,7 @@ containers:
     ports: '8083:8083'
     ip: 10.88.0.211
     drive_map: '/Library/calibre/books:/books:rw'
-    command: '/usr/local/bin/cps'
+    command: '/usr/local/bin/start-calibre-web.sh'
 
   - name: webserver
     ports: '80:80'

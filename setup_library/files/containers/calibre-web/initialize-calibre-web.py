@@ -10,7 +10,7 @@ import urllib.request
 
 def initialize():
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    process = subprocess.Popen(["/usr/local/bin/cps"])
+    process = subprocess.Popen(["/usr/local/bin/cps", "-i", "127.0.0.1"])
     try:
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:

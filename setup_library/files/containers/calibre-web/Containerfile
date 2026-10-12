@@ -36,7 +36,8 @@ RUN apt-get update && \
 
 # Install calibre-web via pip
 # calibreweb provides the 'cps' entry point (Calibre-Web Python Server)
-RUN pip3 install --break-system-packages calibreweb==0.6.27
+# Resolve the latest stable release whenever this layer is rebuilt.
+RUN pip3 install --break-system-packages --upgrade calibreweb
 
 # Clean up build dependencies to reduce image size (optional layer)
 RUN apt-get remove -y python3-dev gcc libffi-dev libxml2-dev libxslt1-dev && \
@@ -44,27 +45,28 @@ RUN apt-get remove -y python3-dev gcc libffi-dev libxml2-dev libxslt1-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy startup wrapper that pre-configures the library path
+# Keep nginx in the same container so only its loopback connection is trusted.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends nginx && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy initialization and the supervisor for Calibre-Web and its proxy.
 COPY start-calibre-web.sh /usr/local/bin/start-calibre-web.sh
 COPY initialize-calibre-web.py /usr/local/bin/initialize-calibre-web.py
-RUN chmod +x /usr/local/bin/start-calibre-web.sh
+COPY configure-calibre-web.py /usr/local/bin/configure-calibre-web.py
+COPY nginx.conf /etc/nginx/nginx.conf
+RUN chmod +x /usr/local/bin/start-calibre-web.sh && nginx -t
 
 # Pre-generate app.db with library path set to /books so first boot works
 # without requiring manual setup through the web UI.
-# Also enable anonymous browsing so the main page responds without login
-# (required for the ansible health check: grep '<title>Calibre-Web').
+# The proxy signs visitors in as admin, including the ansible health check.
 # Wait for HTTP readiness and stop cps with a timeout before configuring it.
 RUN python3 /usr/local/bin/initialize-calibre-web.py && \
-    python3 -c "import sqlite3; \
-conn = sqlite3.connect('/root/.calibre-web/app.db'); \
-c = conn.cursor(); \
-c.execute('UPDATE settings SET config_calibre_dir = \"/books\", config_anonbrowse = 1'); \
-conn.commit(); conn.close(); \
-print('Library path set to /books, anonymous browsing enabled')"
+    python3 /usr/local/bin/configure-calibre-web.py
 
 # Expose Calibre-Web port
 EXPOSE 8083
 
-# Default command: start Calibre-Web server
-# The ansible playbook invokes: /usr/local/bin/cps
-CMD ["/usr/local/bin/cps"]
+# Start the public proxy and the loopback-only Calibre-Web backend.
+CMD ["/usr/local/bin/start-calibre-web.sh"]

@@ -1194,7 +1194,7 @@
             # Start the persistent Calibre-Web server on :8083.
             - name: start ebook
               ansible.builtin.shell: |
-                podman run -d --user 0 --restart unless-stopped --ip 10.88.0.211 --privileged -p 8083:8083  -v /Library/calibre/books:/books:rw  localhost/calibre-web /usr/local/bin/cps
+                podman run -d --user 0 --restart unless-stopped --stop-timeout 20 --ip 10.88.0.211 --privileged -p 8083:8083  -v /Library/calibre/books:/books:rw  localhost/calibre-web /usr/local/bin/start-calibre-web.sh
               register: ebookstart
 
             - name: debug show ebookstart

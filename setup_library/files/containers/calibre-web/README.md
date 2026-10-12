@@ -6,7 +6,11 @@ This container runs [Calibre-Web](https://github.com/janeczku/calibre-web), a we
 
 ```
 calibre-web/
-├── Containerfile        # Container build instructions
+├── Containerfile
+├── initialize-calibre-web.py  # Bounded first-run database initialization
+├── configure-calibre-web.py   # Library and trusted-proxy settings
+├── start-calibre-web.sh       # Supervises both processes
+├── nginx.conf                # Public proxy and automatic admin identity
 └── README.md
 ```
 
@@ -33,12 +37,13 @@ as root, or prefix them with `sudo`.
 podman run -d \
     --user 0 \
     --restart unless-stopped \
+    --stop-timeout 20 \
     --ip 10.88.0.211 \
     --privileged \
     -p 8083:8083 \
     -v /Library/calibre/books:/books:rw \
     localhost/calibre-web \
-    /usr/local/bin/cps
+    /usr/local/bin/start-calibre-web.sh
 ```
 
 - **IP**: 10.88.0.211 (static on the podman network)
@@ -64,13 +69,15 @@ This runs `calibredb` to import books from the `/incoming` directory into the Ca
 
 | Binary | Source | Purpose |
 |--------|--------|---------|
-| `/usr/local/bin/cps` | pip: calibreweb 0.6.27 | Calibre-Web Python Server (web UI) |
+| `/usr/local/bin/cps` | pip: latest stable calibreweb | Calibre-Web backend on 127.0.0.1:8084 |
+| `/usr/sbin/nginx` | apt: nginx | Public proxy on port 8083; signs visitors in as admin |
 | `/usr/bin/calibredb` | apt: calibre | CLI tool for managing the Calibre library database |
 
 ## Dependencies
 
 - **calibre** (apt) — provides `calibredb` for adding/removing/managing books
-- **calibreweb** (pip) — the web application itself
+- **calibreweb** (pip, unpinned) — the latest stable release when the install layer runs
+- **nginx** (apt) — the local authentication proxy
 - **imagemagick** — image processing for book cover thumbnails (used via Wand)
 - **ghostscript** — PDF rendering for extracting covers from PDF books
 
@@ -85,16 +92,39 @@ This runs `calibredb` to import books from the `/incoming` directory into the Ca
 
 | Port | Service |
 |------|---------|
-| 8083 | Calibre-Web interface |
+| 8083 | nginx proxy with automatic admin login |
+| 8084 | Calibre-Web backend, bound only to container loopback |
 
 ## First-Time Setup
 
-The image preconfigures the library path as `/books` and enables anonymous browsing.
-Mount a Calibre library containing `metadata.db` there. If prompted for the library
-path after changing configuration, enter `/books`. The default admin credentials are:
+The image preconfigures the library path as `/books`. Mount a Calibre library
+containing `metadata.db` there. Every visitor to port 8083 is automatically
+authenticated as the existing `admin` user, with full administrator permissions.
+This includes OPDS requests. Logging out will authenticate as admin again on the
+next request.
+
+nginx overrides `X-Calibre-User` with `admin`; Calibre-Web trusts only the local
+proxy at `127.0.0.1`. The backend listens on `127.0.0.1:8084` inside the container.
+Use `start-calibre-web.sh` (the image default), rather than invoking `cps` directly.
+The startup script reapplies the appliance port and proxy settings on each start.
+
+Proxy authentication does not submit or embed a password. A fresh database still
+has the upstream default credentials:
 
 - **Username**: admin
 - **Password**: admin123
+
+## Updating Calibre-Web
+
+The package is unpinned and installed with `pip --upgrade`. Normal image builds
+can reuse the pip layer; to check PyPI again, rebuild without the layer cache:
+
+```bash
+sudo podman build --no-cache -t localhost/calibre-web:latest -f Containerfile .
+```
+
+Recreate the server container after rebuilding, then export the new image for
+offline deployment.
 
 ## Exporting the Image
 

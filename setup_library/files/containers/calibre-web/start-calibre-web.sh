@@ -1,33 +1,40 @@
 #!/bin/bash
-# Startup script for Calibre-Web
-# Ensures the library path is set to /books before starting the server.
-# This avoids the "initial setup" prompt on first run.
+# Supervise the public proxy and the loopback-only Calibre-Web backend.
+set -euo pipefail
 
-APP_DB="/root/.calibre-web/app.db"
-
-# Wait for app.db to be created on first launch, or pre-configure it
-if [ ! -f "$APP_DB" ]; then
-    # Use the same readiness check and bounded shutdown as the image build.
-    python3 /usr/local/bin/initialize-calibre-web.py || exit 1
+if [ ! -f /root/.calibre-web/app.db ]; then
+    python3 /usr/local/bin/initialize-calibre-web.py
 fi
+python3 /usr/local/bin/configure-calibre-web.py
+nginx -t
 
-# Set the calibre library path if not already configured
-if [ -f "$APP_DB" ]; then
-    python3 -c "
-import sqlite3
-conn = sqlite3.connect('$APP_DB')
-c = conn.cursor()
-c.execute('SELECT config_calibre_dir FROM settings')
-row = c.fetchone()
-if row and (row[0] is None or row[0] == ''):
-    c.execute('UPDATE settings SET config_calibre_dir = \"/books\"')
-    conn.commit()
-    print('Calibre-Web: Library path set to /books')
-else:
-    print('Calibre-Web: Library path already configured as', row[0] if row else 'N/A')
-conn.close()
-"
-fi
+cps_pid=
+nginx_pid=
+stop_services() {
+    trap '' TERM INT
+    [ -z "$nginx_pid" ] || kill -QUIT "$nginx_pid" 2>/dev/null || true
+    [ -z "$cps_pid" ] || kill -TERM "$cps_pid" 2>/dev/null || true
+    # Bound shutdown even if cps receives TERM while it is still starting.
+    for i in $(seq 1 10); do
+        if ! kill -0 "$cps_pid" 2>/dev/null && ! kill -0 "$nginx_pid" 2>/dev/null; then
+            break
+        fi
+        sleep 1
+    done
+    [ -z "$cps_pid" ] || kill -KILL "$cps_pid" 2>/dev/null || true
+    [ -z "$nginx_pid" ] || kill -KILL "$nginx_pid" 2>/dev/null || true
+    wait || true
+}
+trap 'stop_services; exit 0' TERM INT
 
-# Now start cps for real
-exec /usr/local/bin/cps
+/usr/local/bin/cps -i 127.0.0.1 &
+cps_pid=$!
+nginx -g 'daemon off;' &
+nginx_pid=$!
+
+status=0
+wait -n "$cps_pid" "$nginx_pid" || status=$?
+echo "A Calibre-Web service exited (status $status); stopping container."
+stop_services
+if [ "$status" -eq 0 ]; then status=1; fi
+exit "$status"
