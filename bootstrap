@@ -1156,7 +1156,7 @@ while true; do
                 *)       DISP_DESC="Unknown" ;;
             esac
             echo -e "  Display: ${CYAN}${DISP_DESC}${NC}"
-            echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
+            # echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
             echo
             if confirm "Proceed with fresh installation?"; then
                 do_first_boot
