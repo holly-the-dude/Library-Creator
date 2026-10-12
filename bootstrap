@@ -324,7 +324,11 @@ do_reinstall() {
         msg_step "Removing all podman images..."
         podman rmi --all --force 2>/dev/null
         msg_ok "Reinstall cleanup complete"
-        msg_info "Run $repository/bootstrap again and choose 1) Fresh Install to install the updated version."
+        echo -e "${YELLOW}"
+        echo "╔══════════════════════════════════════════════════╗"
+        echo "║  Your can now run bootstrap again                ║"
+        echo "║  And do a fresh install                          ║"
+        echo "╚══════════════════════════════════════════════════╝"        
         exit 
     else
         msg_info "Reinstall / upgrade cancelled"
