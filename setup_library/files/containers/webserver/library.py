@@ -33,7 +33,6 @@ DEFAULT_CONFIG = {
     "webserver": {
         "library_path": "/library/library",
         "web_path": "/library/web",
-        "host_ip": "10.1.1.1",
         "nginx": {
             "listen_port": 80,
             "server_names": ["localhost", "library", "library.local", "10.1.1.1"],
@@ -46,7 +45,7 @@ DEFAULT_CONFIG = {
             "display_name": "Wiki",
             "internal_ip": "10.88.0.200",
             "internal_port": 6902,
-            "external_url": "http://10.1.1.1:6902",
+            "external_port": 6902,
             "check_text": "Kiwix",
             "timeout": 5,
         },
@@ -55,7 +54,7 @@ DEFAULT_CONFIG = {
             "display_name": "Music",
             "internal_ip": "10.88.0.210",
             "internal_port": 5082,
-            "external_url": "http://10.1.1.1:9099",
+            "external_port": 9099,
             "check_text": "Load basic HTML",
             "timeout": 10,
         },
@@ -64,7 +63,7 @@ DEFAULT_CONFIG = {
             "display_name": "eBook Reader",
             "internal_ip": "10.88.0.211",
             "internal_port": 8083,
-            "external_url": "http://10.1.1.1:8083",
+            "external_port": 8083,
             "check_text": "Calibre-Web",
             "timeout": 10,
         },
@@ -103,6 +102,21 @@ def load_config():
 # Service Checking
 # =============================================================================
 
+def service_port(value):
+    """Validate a published port before using it in a link or nginx config."""
+    port = int(value)
+    if not 1 <= port <= 65535:
+        raise ValueError(f"Invalid service port: {value}")
+    return port
+
+
+def service_url(service):
+    """Local services redirect through nginx using the request's hostname."""
+    if "external_port" in service:
+        return f"/services/{service_port(service['external_port'])}/"
+    return service.get("external_url", "")
+
+
 def check_service(service):
     """
     Check if a service is running by making an HTTP request and looking
@@ -110,7 +124,7 @@ def check_service(service):
 
     Args:
         service: dict with keys: name, display_name, internal_ip,
-                 internal_port, external_url, check_text, timeout, and an
+                 internal_port, external_port (or external_url), check_text, timeout, and an
                  optional check_path (endpoint path such as "/bridge/status";
                  defaults to the site root).
 
@@ -125,7 +139,7 @@ def check_service(service):
     check_path = service.get("check_path", "")
     timeout = service.get("timeout", 5)
     display_name = service.get("display_name", service.get("name", "Unknown"))
-    external_url = service.get("external_url", "")
+    external_url = service_url(service)
 
     # Normalize the optional path so both "bridge/status" and "/bridge/status"
     # work, and an empty/omitted value keeps the previous root-URL behavior.
@@ -362,12 +376,13 @@ def build_html_tree(path, web_path, html_template, base_url="/library/", current
 # Nginx Configuration
 # =============================================================================
 
-def configure_nginx(webserver_config):
+def configure_nginx(webserver_config, services_config=None):
     """
     Generate and write the nginx configuration, then start or reload nginx.
 
     Args:
         webserver_config: dict with webserver settings from YAML
+        services_config: service definitions with published external ports
     """
     listen_port = webserver_config.get("nginx", {}).get("listen_port", 80)
     server_names = webserver_config.get("nginx", {}).get(
@@ -376,10 +391,26 @@ def configure_nginx(webserver_config):
     server_names_str = " ".join(str(s) for s in server_names)
     web_path = webserver_config.get("web_path", "/library/web")
 
+    # Exact routes keep the public hostname and switch only the service port.
+    # Restrict redirects to configured ports; no JavaScript is needed.
+    if services_config is None:
+        services_config = DEFAULT_CONFIG["services"]
+    ports = {service_port(webserver_config.get("shutdown_port", 9999))}
+    ports.update(service_port(service["external_port"])
+                 for service in services_config if "external_port" in service)
+    service_redirects = "\n".join(
+        f"    location = /services/{port}/ {{\n"
+        f"        return 302 $scheme://$host:{port}/;\n"
+        "    }"
+        for port in sorted(ports)
+    )
+
     nginx_config = f"""
 server {{
     listen {listen_port};
     server_name {server_names_str};
+
+{service_redirects}
 
     location / {{
         autoindex on;
@@ -470,14 +501,13 @@ def main():
     webserver_config = config.get("webserver", DEFAULT_CONFIG["webserver"])
     library_path = webserver_config.get("library_path", "/library/library")
     web_path = webserver_config.get("web_path", "/library/web")
-    host_ip = webserver_config.get("host_ip", "10.1.1.1")
     shutdown_port = webserver_config.get("shutdown_port", 9999)
 
     # Extract services configuration
     services_config = config.get("services", DEFAULT_CONFIG["services"])
 
     # --- Configure and start nginx ---
-    configure_nginx(webserver_config)
+    configure_nginx(webserver_config, services_config)
 
     # --- Check which services are available ---
     print("\n--- Checking services ---")
@@ -486,7 +516,7 @@ def main():
     print(f"\nActive services: {len(active_services)}/{len(services_config)}")
 
     # --- Build the HTML template with nav bar ---
-    shutdown_url = f"http://{host_ip}:{shutdown_port}"
+    shutdown_url = f"/services/{service_port(shutdown_port)}/"
     html_template = get_html_template(nav_links, shutdown_url)
 
     # Service availability can change without adding/removing library files.

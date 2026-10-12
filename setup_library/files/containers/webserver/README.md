@@ -44,13 +44,28 @@ they do not depend on browser history. The home page has no Back button.
 The theme lives in `style.css` beside `library.py`. The generator embeds it in
 each page, so the interface needs no external fonts, JavaScript, or network
 assets. File links and detected service links still open in a new tab; folder
-links stay in the library. Service discovery, music proxying, and the Shutdown
-destination retain their existing behavior.
+links stay in the library. Service health checks use their configured internal
+addresses; browser navigation keeps the hostname used to open the Library.
 
 Rebuild and recreate the webserver container to apply the theme. On startup,
 the changed template regenerates existing home and folder pages even when the
 content file count is unchanged. When copying the generator manually, copy
 `style.css` alongside it, then run `python3 /root/library.py` in the container.
+
+## Access over Wi-Fi or Ethernet
+
+Open the Library through `http://10.1.1.1`, `http://library`, `http://library.local`,
+or its LAN IP address. Service links keep that hostname and switch to the
+published service port. For example, Shutdown from `http://library.local` opens
+`http://library.local:9999/`, where the user confirms shutdown or restart.
+Opening the confirmation page does not perform either action.
+
+Navigation uses relative links such as `/services/8083/`. Nginx responds with a
+temporary redirect using the request hostname and the configured service port.
+Music uses the existing relative `/music` proxy path. This works without
+JavaScript and on generated folder pages as well as the home page. Hostname
+resolution itself is provided by the network or mDNS; this change does not
+configure DNS.
 
 ## Building the Container
 
@@ -93,7 +108,6 @@ The config file (`/root/library_setup.yml` inside the container) defines three s
 webserver:
   library_path: /library/library
   web_path: /library/web
-  host_ip: 10.1.1.1
   nginx:
     listen_port: 80
     server_names:
@@ -107,7 +121,8 @@ webserver:
 ### `services` — Services to monitor
 
 Each service entry tells library.py how to check if a service is running. The script makes an HTTP request to `internal_ip:internal_port` with an optional
-`check_path` (default: the root path), looks for `check_text` in the response, and if found, creates a nav bar link pointing to `external_url`:
+`check_path` (default: the root path), looks for `check_text` in the response, and if found, creates a nav bar link using `external_port`. Use `external_url` instead for a
+relative proxy path such as `/music`, or for a deliberately external website:
 
 ```yaml
 services:
@@ -115,7 +130,7 @@ services:
     display_name: "Wiki"
     internal_ip: 10.88.0.200
     internal_port: 6902
-    external_url: "http://10.1.1.1:6902"
+    external_port: 6902
     check_text: "Kiwix"
     timeout: 5
 
@@ -123,7 +138,7 @@ services:
     display_name: "eBook Reader"
     internal_ip: 10.88.0.211
     internal_port: 8083
-    external_url: "http://10.1.1.1:8083"
+    external_port: 8083
     check_text: "Calibre-Web"
     timeout: 10
 ```
@@ -139,7 +154,7 @@ Meshtastic or meshflash:
     internal_ip: 10.1.1.1
     internal_port: 8086
     check_path: /
-    external_url: "http://10.1.1.1:8086"
+    external_port: 8086
     check_text: "<html"
     timeout: 5
 ```
@@ -158,7 +173,8 @@ existing installations use this shared-port check.
 ### Downloads navigation
 
 The **Downloads** tab follows Meshtastic and precedes Shutdown. It links to
-**http://10.1.1.1:4826** and checks `/api/health` on that published host port.
+port **4826** on the browser’s current hostname and checks `/api/health` on
+the configured internal host address.
 The check succeeds even while the downloader is waiting for internet, so users
 can reach its offline status screen. If the service is unavailable, its link is
 omitted, like the other service links.
@@ -222,7 +238,7 @@ services:
     display_name: "Video Streaming"
     internal_ip: 10.88.0.215
     internal_port: 8096
-    external_url: "http://10.1.1.1:8096"
+    external_port: 8096
     check_text: "jellyfin"
     timeout: 5
 ```

@@ -12,7 +12,6 @@
 webserver:
   library_path: /library/library
   web_path: /library/web
-  host_ip: 10.1.1.1
   nginx:
     listen_port: 80
     server_names:
@@ -26,13 +25,15 @@ webserver:
 # Services
 # These are checked by the webserver and displayed in the navigation bar
 # if they respond correctly.
+# external_port keeps the browser hostname and changes only the service port.
+# external_url can instead specify a relative path (e.g. /music) or an external site.
 # -----------------------------------------------------------------------------
 services:
   - name: wiki
     display_name: Wiki
     internal_ip: 10.88.0.200
     internal_port: 6902
-    external_url: http://10.1.1.1:6902
+    external_port: 6902
     check_text: Kiwix
     timeout: 5
 
@@ -40,7 +41,7 @@ services:
     display_name: Music
     internal_ip: 10.88.0.210
     internal_port: 5082
-    external_url: http://10.1.1.1/music
+    external_url: /music
     check_text: ""
     timeout: 110
 
@@ -48,7 +49,7 @@ services:
     display_name: eBook Reader
     internal_ip: 10.88.0.211
     internal_port: 8083
-    external_url: http://10.1.1.1:8083
+    external_port: 8083
     check_text: Calibre-Web
     timeout: 10
 
@@ -56,7 +57,7 @@ services:
     display_name: Maps
     internal_ip: 10.88.0.212
     internal_port: 8080
-    external_url: http://10.1.1.1:8080
+    external_port: 8080
     check_text: Library Maps
     timeout: 5
 
@@ -66,7 +67,7 @@ services:
     # terminal use port 8086 and are mutually exclusive.
     internal_ip: 10.1.1.1
     internal_port: 8086
-    external_url: http://10.1.1.1:8086
+    external_port: 8086
     check_path: /
     check_text: '<html'
     timeout: 5
@@ -75,7 +76,7 @@ services:
     display_name: Downloads
     internal_ip: 10.1.1.1
     internal_port: 4826
-    external_url: http://10.1.1.1:4826
+    external_port: 4826
     # Local health stays available while the downloader waits for internet.
     check_path: /api/health
     check_text: '"status": "ok"'

@@ -33,15 +33,29 @@ class DownloadNavigationTests(unittest.TestCase):
 
         with patch.object(web.requests, "get", side_effect=response) as get:
             links = web.discover_services(self.config["services"])
-        html = web.get_html_template("\n".join(links), "http://10.1.1.1:9999")
+        html = web.get_html_template("\n".join(links), "/services/9999/")
         self.assertLess(html.index(">Meshtastic</a>"), html.index(">Downloads</a>"))
         self.assertLess(html.index(">Downloads</a>"), html.index(">Shutdown</a>"))
-        self.assertIn('href="http://10.1.1.1:4826"', html)
+        self.assertIn('href="/services/4826/"', html)
         get.assert_any_call("http://10.1.1.1:4826/api/health", timeout=5)
 
     def test_unavailable_downloader_is_omitted(self):
         with patch.object(web.requests, "get", side_effect=requests.ConnectionError):
             self.assertEqual(web.check_service(self.service), "")
+
+    def test_appliance_navigation_uses_relative_links(self):
+        for service in self.config["services"]:
+            with self.subTest(service=service["name"]):
+                self.assertTrue(web.service_url(service).startswith("/"))
+        music = next(s for s in self.config["services"] if s["name"] == "music")
+        self.assertEqual(web.service_url(music), "/music")
+        self.assertEqual(web.service_url({"external_url": "https://example.org/books"}),
+                         "https://example.org/books")
+
+    def test_invalid_published_ports_are_rejected(self):
+        for port in (0, 65536, "8083; return 200"):
+            with self.subTest(port=port), self.assertRaises(ValueError):
+                web.service_url({"external_port": port})
 
     def test_new_navigation_updates_existing_index_and_category_pages(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -50,7 +64,7 @@ class DownloadNavigationTests(unittest.TestCase):
             (library / "Books").mkdir(parents=True)
             (library / "Books/example.pdf").write_bytes(b"example")
             pages.mkdir()
-            old = web.get_html_template("", "http://10.1.1.1:9999")
+            old = web.get_html_template("", "/services/9999/")
             (pages / "index.html").write_text(old.replace(web.TREE_CONTENT_PLACEHOLDER, ""))
             (pages / "file_count.txt").write_text("1")
             self.config["webserver"].update(library_path=str(library), web_path=str(pages))
@@ -59,7 +73,7 @@ class DownloadNavigationTests(unittest.TestCase):
                  patch.object(web.requests, "get", return_value=Mock(content=b'{"status": "ok"}')):
                 web.main()
             for filename in ("index.html", "Books.html"):
-                self.assertIn('href="http://10.1.1.1:4826"', (pages / filename).read_text())
+                self.assertIn('href="/services/4826/"', (pages / filename).read_text())
 
 
 
