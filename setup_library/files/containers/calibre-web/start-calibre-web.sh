@@ -7,17 +7,8 @@ APP_DB="/root/.calibre-web/app.db"
 
 # Wait for app.db to be created on first launch, or pre-configure it
 if [ ! -f "$APP_DB" ]; then
-    # Start cps briefly to generate the default app.db, then stop it
-    /usr/local/bin/cps &
-    CPS_PID=$!
-    # Wait for app.db to appear
-    for i in $(seq 1 30); do
-        [ -f "$APP_DB" ] && break
-        sleep 1
-    done
-    kill $CPS_PID 2>/dev/null
-    wait $CPS_PID 2>/dev/null
-    sleep 1
+    # Use the same readiness check and bounded shutdown as the image build.
+    python3 /usr/local/bin/initialize-calibre-web.py || exit 1
 fi
 
 # Set the calibre library path if not already configured

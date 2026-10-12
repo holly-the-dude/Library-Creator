@@ -46,21 +46,15 @@ RUN apt-get remove -y python3-dev gcc libffi-dev libxml2-dev libxslt1-dev && \
 
 # Copy startup wrapper that pre-configures the library path
 COPY start-calibre-web.sh /usr/local/bin/start-calibre-web.sh
+COPY initialize-calibre-web.py /usr/local/bin/initialize-calibre-web.py
 RUN chmod +x /usr/local/bin/start-calibre-web.sh
 
 # Pre-generate app.db with library path set to /books so first boot works
 # without requiring manual setup through the web UI.
 # Also enable anonymous browsing so the main page responds without login
 # (required for the ansible health check: grep '<title>Calibre-Web').
-# Start cps briefly to let it create the database schema, then configure it.
-RUN /usr/local/bin/cps & \
-    CPS_PID=$! && \
-    for i in $(seq 1 15); do \
-        [ -f /root/.calibre-web/app.db ] && sleep 2 && break; \
-        sleep 1; \
-    done && \
-    kill $CPS_PID 2>/dev/null; \
-    wait $CPS_PID 2>/dev/null; \
+# Wait for HTTP readiness and stop cps with a timeout before configuring it.
+RUN python3 /usr/local/bin/initialize-calibre-web.py && \
     python3 -c "import sqlite3; \
 conn = sqlite3.connect('/root/.calibre-web/app.db'); \
 c = conn.cursor(); \
