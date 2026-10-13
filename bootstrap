@@ -288,6 +288,7 @@ check_uptime() {
 do_reinstall() {
     local repository
     repository=$(resolve_repository) || return 1
+    msg_info $repository
     msg_info "This will update $repository with git pull before reinstalling."
     msg_warn "This will remove all installation progress and container images!"
     separator
@@ -316,20 +317,37 @@ do_reinstall() {
         printf '%s\n' "$repository" > "$REPOSITORY_FILE" || return 1
         ensure_trixie "$repository" || return 1
         msg_step "Removing boot flags and install files..."
-        rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot /root/start_library
-        rm -rf /root/install /root/display
+        cd /root
+        rm -frv \
+            .0boot \
+            bootstrap \
+            display  \
+            file_me_invert.jpg  \
+            .firstboot  \
+            install  \
+            install.log \
+            installplay.log  \
+            .secondboot \
+            start_library.yml \
+            .thirdboot \
+            touchtest.py \
+            
         msg_step "Stopping all pods ...." 
         podman stop --all 
         podman stop --all 
         msg_step "Removing all podman images..."
         podman rmi --all --force 2>/dev/null
         msg_ok "Reinstall cleanup complete"
+        clear
         echo -e "${YELLOW}"
         echo "╔══════════════════════════════════════════════════╗"
-        echo "║  Your can now run bootstrap again                ║"
+        echo "║  Rerunning bootstrap again                       ║"
         echo "║  And do a fresh install                          ║"
-        echo "╚══════════════════════════════════════════════════╝"        
-        exit 
+        echo "╚══════════════════════════════════════════════════╝"   
+        sleep 10
+        cd $repository
+        ./bootstrap 
+        exit 0
     else
         msg_info "Reinstall / upgrade cancelled"
     fi
@@ -1011,7 +1029,7 @@ do_third_boot() {
         pause
         return
     fi
-
+    displayit setup_third_boot.jpg
     msg_step "Starting Third Boot - Final Configuration"
     separator
 
@@ -1021,9 +1039,9 @@ do_third_boot() {
     rm -f /var/spool/cron/crontabs/root
     systemctl restart cron
 
-    msg_info "Displaying read-only notice on TFT..."
-    /usr/bin/fbi -T 2 -d /dev/fb0 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
-    /usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
+    # msg_info "Displaying read-only notice on TFT..."
+    # /usr/bin/fbi -T 2 -d /dev/fb0 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
+    # /usr/bin/fbi -T 2 -d /dev/fb1 -noverbose -a /root/install/setup_library/files/display/read_only.jpg 2>/dev/null
 
     msg_step "Removing preconfigured network connection..."
     rm -fv /etc/NetworkManager/system-connections/preconfigured.nmconnection
