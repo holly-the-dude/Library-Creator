@@ -32,11 +32,10 @@ native resolution or an explicitly selected resolution.
 
 | Option | Action |
 | --- | --- |
-| Fresh Install | Choose a display, review the settings and start First Boot |
+| Fresh Install | Choose a display, review the settings, clear stage flags and start First Boot |
 | Reinstall / Upgrade | Confirm, run `git pull --ff-only` in `/root/Library-Creator`, then perform reinstall cleanup and exit |
-| Resume Install | Use stage flags to select the next pending stage |
+| Restart Install | Clear stage flags and run the same fresh installation from First Boot |
 | System Status | Show stage flags, uptime and whether Ansible is running |
-| Advanced Options | Run a stage manually, reset flags or view the installation log |
 
 **USB storage may be erased during First Boot.** The installer prepares a detected
 USB content disk as exFAT with the label `Library_USB` when that label is absent.
@@ -105,8 +104,12 @@ The installer writes this root cron entry:
 
 Auto mode runs within the first five minutes after boot and skips work if
 `ansible-playbook` is already running. Outside that window, use
-`/root/bootstrap` interactively and choose Resume Install or the appropriate
-Advanced Options stage.
+`/root/bootstrap` interactively and choose Restart Install to begin again.
+
+Fresh Install and Restart Install both remove `/root/.0boot`, `/root/.firstboot`,
+`/root/.secondboot` and `/root/.thirdboot` after the OS preflight succeeds, then
+rerun First Boot with your selected display. Restart Install does not continue
+from the previous stage. Later stages still run automatically after reboot.
 
 | Path | Purpose |
 | --- | --- |
@@ -122,7 +125,7 @@ Advanced Options stage.
 
 Stage flags are not a complete success record: First Boot and Third Boot create
 their flags before finishing their work. After a failure, inspect the logs before
-choosing the stage to retry. Resetting flags alone does not undo installed files.
+choosing Restart Install. Resetting flags alone does not undo installed files.
 
 ## Troubleshooting
 
@@ -131,8 +134,8 @@ choosing the stage to retry. Resetting flags alone does not undo installed files
 - **Container build failed:** check the failing image in the build output. Keep
   both radio contexts in the checkout and ensure package and release downloads
   are reachable. See the [build pipeline](docs/DEVELOPERS.md#container-build-pipeline).
-- **Ansible failed:** inspect `/root/installplay.log` and the recap. Use Advanced
-  Options to retry the affected stage after fixing the underlying problem.
+- **Ansible failed:** inspect `/root/installplay.log` and the recap. Choose
+  Restart Install after fixing the underlying problem.
 - **Radio setup appears instead of messaging:** a USB port alone does not prove
   Meshtastic is running. Check the radio firmware, selected device and serial-port
   ownership using the [Meshtastic guide](setup_library/files/containers/meshtastic/README.md).

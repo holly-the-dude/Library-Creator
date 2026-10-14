@@ -448,8 +448,8 @@ example.
 - **Rebuild everything:** `build_pods.sh` then `create_tar_pods.sh`.
 - **Test the hub monitor** by running the webserver container with `/Library` mounted and
   hitting `http://localhost` — links appear as each backing service comes up.
-- **Reset a device's install state:** `./bootstrap` → `5) Advanced Options → Reset all
-  boot flags`, or `2) Reinstall` to also drop images.
+- **Restart a device's installation:** `./bootstrap` → `3) Restart Install` clears
+  boot flags and starts First Boot, or use `2) Reinstall / Upgrade` to also drop images.
 - **Logs:** `/root/install.log` (auto mode), `/root/installplay.log` (Ansible),
   `podman logs <container>` for a specific service.
 

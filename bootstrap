@@ -132,9 +132,8 @@ show_main_menu() {
     separator
     echo -e "  ${GREEN}1)${NC} Fresh Install          - Full installation from scratch"
     echo -e "  ${GREEN}2)${NC} Reinstall / Upgrade    - Git pull, then reinstall cleanup"
-    echo -e "  ${GREEN}3)${NC} Resume Install         - Continue interrupted install"
+    echo -e "  ${GREEN}3)${NC} Restart Install        - Clear boot flags and install from scratch"
     echo -e "  ${GREEN}4)${NC} System Status          - Check installation progress"
-    echo -e "  ${GREEN}5)${NC} Advanced Options       - Manual boot stage selection"
     echo -e "  ${RED}q)${NC} Quit"
     separator
     echo -en "${WHITE}  Select option: ${NC}"
@@ -147,8 +146,8 @@ show_display_menu() {
     separator
     echo -e "  ${GREEN}1)${NC} TFT 3.5\"  (480x320)   - Larger TFT display"
     echo -e "  ${GREEN}2)${NC} TFT 2.4\"  (320x240)   - Compact TFT display"
-    echo -e "  ${GREEN}3)${NC} HDMI (auto-scale)     - Monitor, scaled status messages"
-    echo -e "  ${GREEN}4)${NC} HDMI desktop          - Monitor, Pi desktop + kiosk browser"
+    echo -e "  ${GREEN}3)${NC} HDMI (auto-scale)     - Monitor, only stats messages"
+    echo -e "  ${GREEN}4)${NC} HDMI desktop          - Monitor, Pi desktop + kiosk (use touchscreen or keyboard and mouse) browser"
     echo -e "  ${RED}b)${NC} Back to Main Menu"
     separator
     echo -en "${WHITE}  Select display type: ${NC}"
@@ -195,21 +194,6 @@ prompt_hdmi_resolution() {
     esac
     export LIBRARY_HDMI_RES
     msg_ok "HDMI resolution: $LIBRARY_HDMI_RES"
-}
-
-show_advanced_menu() {
-    clear
-    banner
-    echo -e "${WHITE}  Advanced Options${NC}"
-    separator
-    echo -e "  ${GREEN}1)${NC} Run First Boot only   - Download & initial setup"
-    echo -e "  ${GREEN}2)${NC} Run Second Boot only  - Ansible playbook install"
-    echo -e "  ${GREEN}3)${NC} Run Third Boot only   - Final configuration"
-    echo -e "  ${GREEN}4)${NC} Reset all boot flags  - Clear .0boot .firstboot .secondboot .thirdboot"
-    echo -e "  ${GREEN}5)${NC} View install log      - Show /root/install.log"
-    echo -e "  ${RED}b)${NC} Back to Main Menu"
-    separator
-    echo -en "${WHITE}  Select option: ${NC}"
 }
 
 show_status() {
@@ -358,7 +342,7 @@ do_reinstall() {
 # First Boot
 ###########################################################################
 do_first_boot() {
-    if test -e "/root/.firstboot"; then
+    if [[ "${1:-}" != --fresh ]] && test -e "/root/.firstboot"; then
         msg_warn "First boot has already been completed"
         if ! confirm "Run again anyway?"; then
             return
@@ -372,6 +356,11 @@ do_first_boot() {
     ensure_trixie "$repository" || return 1
     if [[ "$BOOTSTRAP_DIR/bootstrap" != /root/bootstrap ]]; then
         cp "$repository/bootstrap" /root/bootstrap || return 1
+    fi
+
+    if [[ "${1:-}" == --fresh ]]; then
+        msg_step "Clearing installation boot flags for a fresh install..."
+        rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot || return 1
     fi
 
     msg_step "Starting First Boot Process"
@@ -1061,34 +1050,6 @@ do_third_boot() {
 }
 
 ###########################################################################
-# Reset Boot Flags
-###########################################################################
-reset_flags() {
-    msg_warn "This will clear all boot progress flags!"
-    if confirm "Reset all boot flags?"; then
-        rm -f /root/.0boot /root/.firstboot /root/.secondboot /root/.thirdboot
-        msg_ok "All boot flags cleared"
-    else
-        msg_info "Reset cancelled"
-    fi
-    pause
-}
-
-###########################################################################
-# View Log
-###########################################################################
-view_log() {
-    if test -e "/root/install.log"; then
-        less /root/install.log
-    elif test -e "/root/installplay.log"; then
-        less /root/installplay.log
-    else
-        msg_warn "No install log found"
-        pause
-    fi
-}
-
-###########################################################################
 # Auto-run mode (called from crontab after reboot)
 ###########################################################################
 auto_run() {
@@ -1131,8 +1092,11 @@ while true; do
     show_main_menu
     read -r choice
     case $choice in
-        1)
-            # Fresh Install
+        1|3)
+            # Fresh Install / restart an interrupted installation from scratch.
+            if [[ "$choice" == 3 ]]; then
+                msg_info "Restart Install clears the boot flags and starts a fresh installation."
+            fi
             show_display_menu
             read -r disp_choice
             case $disp_choice in
@@ -1176,78 +1140,18 @@ while true; do
             echo -e "  Display: ${CYAN}${DISP_DESC}${NC}"
             # echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
             echo
+            msg_warn "This will clear all installation boot flags and rerun First Boot."
             if confirm "Proceed with fresh installation?"; then
-                do_first_boot
+                do_first_boot --fresh
             fi
             ;;
         2)
             # Reinstall / Upgrade
             do_reinstall
             ;;
-        3)
-            # Resume
-            if ! test -e "/root/.firstboot"; then
-                msg_info "No previous install found. Use Fresh Install instead."
-                pause
-            elif ! test -e "/root/.secondboot"; then
-                msg_info "Resuming from Second Boot stage..."
-                if confirm "Continue with Second Boot?"; then
-                    do_second_boot
-                fi
-            elif ! test -e "/root/.thirdboot"; then
-                msg_info "Resuming from Third Boot stage..."
-                if confirm "Continue with Third Boot?"; then
-                    do_third_boot
-                fi
-            else
-                msg_ok "Installation already complete!"
-                pause
-            fi
-            ;;
         4)
             # Status
             show_status
-            ;;
-        5)
-            # Advanced
-            while true; do
-                show_advanced_menu
-                read -r adv_choice
-                case $adv_choice in
-                    1)
-                        show_display_menu
-                        read -r disp_choice
-                        case $disp_choice in
-                            1) DISP="1" ;;
-                            2) DISP="0" ;;
-                            3) DISP="hdmi" ;;
-                            4) DISP="desktop" ;;
-                            *) continue ;;
-                        esac
-                        get_password
-                        do_first_boot
-                        ;;
-                    2)
-                        do_second_boot
-                        ;;
-                    3)
-                        do_third_boot
-                        ;;
-                    4)
-                        reset_flags
-                        ;;
-                    5)
-                        view_log
-                        ;;
-                    b|B)
-                        break
-                        ;;
-                    *)
-                        msg_error "Invalid selection"
-                        pause
-                        ;;
-                esac
-            done
             ;;
         q|Q)
             echo -e "${GREEN}Goodbye!${NC}"

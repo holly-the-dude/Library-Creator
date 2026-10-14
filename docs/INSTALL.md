@@ -105,9 +105,8 @@ You will see the main menu:
 ──────────────────────────────────────────────────
   1) Fresh Install          - Full installation from scratch
   2) Reinstall / Upgrade    - Git pull, then reinstall cleanup
-  3) Resume Install         - Continue interrupted install
+  3) Restart Install        - Clear boot flags and install from scratch
   4) System Status          - Check installation progress
-  5) Advanced Options       - Manual boot stage selection
   q) Quit
 ──────────────────────────────────────────────────
 ```
@@ -281,7 +280,10 @@ the updated installer and rebuild the installation. Reinstall cleanup does not
 delete USB content; the normal Fresh Install formatting rules still apply to
 drives without the `Library_USB` label.
 
-To resume an interrupted install without wiping anything, choose **`3) Resume Install`**.
+To restart an interrupted install, choose **`3) Restart Install`**. Select the
+display and confirm: the installer clears `.0boot`, `.firstboot`, `.secondboot`
+and `.thirdboot`, then runs a fresh installation from First Boot. The same USB
+formatting rules apply as for **`1) Fresh Install`**.
 
 ---
 
@@ -295,12 +297,12 @@ cat /var/spool/cron/crontabs/root
 ```
 
 It should contain a line calling `/root/bootstrap --auto`. If the system has been up
-longer than 5 minutes, auto-resume won't fire - just run `./bootstrap` and pick
-`3) Resume Install`.
+longer than 5 minutes, auto-resume won't fire. Run `./bootstrap` and pick
+`3) Restart Install` to install again from scratch.
 
 **The Ansible stage failed.**
 Read `less /root/installplay.log` to find the failing task. Then use
-`5) Advanced Options → Reset all boot flags` and retry from a fresh install.
+`3) Restart Install` after fixing the underlying problem.
 
 **Port 8086 shows firmware setup even though a radio is connected.**
 The radio did not complete a Meshtastic handshake. Check its USB cable, firmware,
@@ -314,8 +316,8 @@ this for you; if you're mounting an existing drive, confirm the label with
 `lsblk -o NAME,FSTYPE,LABEL`.
 
 **The display shows nothing / wrong colors.**
-Confirm you picked the correct display type during install. For TFT issues, re-run the
-relevant boot stage from `5) Advanced Options`. Serial consoles may not render the
+Confirm you picked the correct display type during install. To change it, choose
+`3) Restart Install` and select the correct display. Serial consoles may not render the
 color status messages properly - use SSH or a real terminal.
 
 **I can't see the `library` WiFi network.**
