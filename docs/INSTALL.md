@@ -32,7 +32,7 @@ When installation finishes, the Raspberry Pi will:
 | Item | Notes |
 |------|-------|
 | Raspberry Pi | Pi 3 (dont expect speed), Pi 4, or Pi 5 (2gb works) |
-| microSD card | 16 GB or larger, for Raspberry Pi OS and install files|
+| microSD card | 32 GB or larger, for Raspberry Pi OS and install files|
 | USB drive | Holds the library content (Wikipedia, music, books, maps). Larger is better - content can ginormous |
 | Display | A 3.5" TFT, 2.4" TFT, or an HDMI monitor. The display is optional but recommended for seeing boot status |
 | Power supply | The official supply for your Pi model |
