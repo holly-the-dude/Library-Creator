@@ -6,6 +6,8 @@ let selected = new Set(), visible = [], pollNumber = 0;
 let restartBusy = false, restartError = "";
 let uploadFiles = [], uploadBusy = false;
 let uploadRestartPending = false;
+let cloneScan = null, cloneBusy = false, cloneError = "";
+function cloning() { return cloneBusy || ["running", "unknown"].includes(state.clone?.status); }
 const uploadDestinations = {music: "/Library/music", data: "/Library/library", ebooks: "/Library/calibre/put_new_books_here"};
 const remindedDownloads = new Set();
 const pageSize = 40;
@@ -66,7 +68,7 @@ function renderSources() {
     link.href = info.url; link.target = "_blank"; link.rel = "noopener noreferrer";
     card.append(link); $("sources").append(card);
   }
-  $("refresh").disabled = state.refreshing || state.internet.status !== "online";
+  $("refresh").disabled = cloning() || state.refreshing || state.internet.status !== "online";
   $("refresh").textContent = state.refreshing ? "Checking sources…" : "Refresh sources";
 }
 function renderStorage() {
@@ -140,10 +142,18 @@ function filteredRows() {
 }
 function renderFiles() {
   const uploading = source === "upload";
-  $("download-panel").hidden = uploading;
+  const cloneTab = source === "clone";
+  $("clone-panel").hidden = !cloneTab;
+  $("download-panel").hidden = uploading || cloneTab;
   $("upload-panel").hidden = !uploading;
   $("catalog-title").textContent = uploading ? "Upload files" : "Available downloads";
-  $("count").hidden = uploading;
+  $("count").hidden = uploading || cloneTab;
+  if (cloneTab) {
+    $("catalog-title").textContent = "Clone";
+    $("destination").textContent = "Copy the SD card or Library_USB to another drive";
+    renderClone();
+    return;
+  }
   if (uploading) {
     $("destination").textContent = "Add files from your device to the Library USB drive";
     return;
@@ -196,7 +206,7 @@ function renderSelection() {
   const rows = state.catalog.filter(row => selected.has(row.id));
   const known = rows.reduce((sum, row) => sum + (row.size || 0), 0), unknown = rows.some(row => row.size == null);
   $("selected").textContent = rows.length ? `${rows.length} selected · ${bytes(known)}${unknown ? " + unknown sizes" : ""}` : "No files selected";
-  $("download").disabled = !rows.length || state.internet.status !== "online" || !state.storage.ready || known > state.storage.available;
+  $("download").disabled = cloning() || !rows.length || state.internet.status !== "online" || !state.storage.ready || known > state.storage.available;
   const choices = visible.filter(eligible), checked = choices.filter(row => selected.has(row.id));
   $("select-page").checked = !!choices.length && checked.length === choices.length;
   $("select-page").indeterminate = checked.length > 0 && checked.length < choices.length;
@@ -246,7 +256,7 @@ function renderRouting() {
     const line = element("div", undefined, "job-head");
     line.append(element("span", row.title));
     const button = element("button", info.pending?.filename === row.filename ? "Queued for restart" : "Use after restart", "secondary");
-    button.disabled = !state.storage.ready || info.pending?.filename === row.filename;
+    button.disabled = cloning() || !state.storage.ready || info.pending?.filename === row.filename;
     button.addEventListener("click", async () => {
       if (!confirm(`Use ${row.title} after the next shutdown and restart? This replaces the active routing region and rebuilds directions. The existing region continues working until restart.`)) return;
       try { await api("/api/routing", {filename: row.filename}); state.routing.pending = row; notice("Routing region selected. Shut down and restart the Library after downloads finish."); renderRouting(); }
@@ -257,6 +267,7 @@ function renderRouting() {
   if (!info.downloads.length) $("routing-downloads").append(element("p", "No verified routing downloads yet."));
   if (info.pending) {
     const cancel = element("button", "Cancel region change", "secondary");
+    cancel.disabled = cloning();
     cancel.addEventListener("click", async () => {
       try { await api("/api/routing", {filename: null}); state.routing.pending = null; renderRouting(); }
       catch (error) { notice(error.message); }
@@ -269,13 +280,13 @@ function renderRouting() {
 function showRestartReminder() {
   const dialog = $("restart-reminder");
   const active = state.jobs.filter(job => activeStates.has(job.status));
-  $("restart-now").disabled = restartBusy || active.length > 0 || uploadBusy || state.upload_active || !state.restart?.available || state.restart?.requested;
+  $("restart-now").disabled = cloning() || restartBusy || active.length > 0 || uploadBusy || state.upload_active || !state.restart?.available || state.restart?.requested;
   $("restart-status").textContent = restartError || (state.restart?.requested
     ? "Restart requested. Keep power connected and reload this page when the Library is back online."
     : restartBusy ? "Requesting a graceful restart…"
     : state.restart?.available ? "" : "Automatic restart is not installed. Use the Library's Shutdown option, then turn it back on after shutdown finishes.");
   for (const job of active) remindedDownloads.delete(job.id);
-  if (active.length || uploadBusy || state.upload_active) {
+  if (cloning() || active.length || uploadBusy || state.upload_active) {
     if (dialog.open) dialog.close();
     return;
   }
@@ -293,7 +304,7 @@ async function poll() {
     if (state.restart?.requested) return;
     state = {...state, ...fresh};
     selected = new Set([...selected].filter(id => state.catalog.some(row => row.id === id && eligible(row))));
-    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting(); renderUpload();
+    renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting(); renderUpload(); renderClone();
     showRestartReminder();
   } catch (error) { if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message); }
   setTimeout(poll, 2500);
@@ -303,12 +314,49 @@ async function download(ids) {
   catch (error) { notice(error.message); }
 }
 function uploadCategory() { return document.querySelector('[name="upload-category"]:checked').value; }
+function renderClone() {
+  const info = state.clone || {};
+  const transfers = uploadBusy || state.upload_active || state.refreshing || state.jobs.some(job => activeStates.has(job.status));
+  $("clone-scan").disabled = cloning() || !info.available || state.restart?.requested;
+  $("clone-source").disabled = cloning();
+  $("clone-status").textContent = cloneError || (cloning() ? info.message || "Contacting clone service…" : transfers ? "Wait for transfers and source refresh to finish before cloning." : info.message || "Checking host clone service…");
+  if (info.status === "running" && info.copied != null) $("clone-status").textContent += ` Copied ${bytes(info.copied)} in this stage.`;
+  $("clone-capacity").textContent = cloneScan ? `Source: ${cloneScan.source.device} · Used: ${bytes(cloneScan.source.used)} · Destination needs at least ${bytes(cloneScan.source.required)} including filesystem overhead.` : "";
+  $("clone-targets").replaceChildren();
+  if (!cloneScan) return;
+  if (!cloneScan.targets.length) $("clone-targets").append(element("p", "No unused USB destination found. Insert a spare drive into the Pi and scan again. Mounted or in-use drives are not offered."));
+  for (const target of cloneScan.targets) {
+    const row = element("div", undefined, "clone-target");
+    row.append(element("p", `${target.device} · ${target.model} · ${bytes(target.size)}${target.serial ? " · Serial: " + target.serial : ""}`));
+    const button = element("button", target.fits ? "Erase and clone…" : "Too small");
+    button.disabled = !target.fits || cloning() || transfers || !info.available || state.restart?.requested;
+    button.addEventListener("click", async () => {
+      const confirmation = prompt(`Erase ALL data on ${target.device} (${target.model}, ${bytes(target.size)}) and clone the ${cloneScan.source.kind === "sd" ? "SD card" : "Library_USB"}? Type ${target.device} to confirm.`);
+      if (confirmation !== target.device) return;
+      cloneBusy = true; cloneError = ""; renderClone();
+      try {
+        const result = await api("/api/clone/start", {token: target.token, confirmation});
+        state.clone = {available: true, ...result}; cloneScan = null;
+      } catch (error) { cloneError = error.message; }
+      finally { cloneBusy = false; renderClone(); showRestartReminder(); }
+    });
+    row.append(button); $("clone-targets").append(row);
+  }
+}
+$("clone-source").addEventListener("change", () => { cloneScan = null; cloneError = ""; renderClone(); });
+$("clone-scan").addEventListener("click", async () => {
+  cloneBusy = true; cloneError = ""; cloneScan = null; renderClone();
+  try { cloneScan = await api("/api/clone/scan", {source: $("clone-source").value}); }
+  catch (error) { cloneError = error.message; }
+  finally { cloneBusy = false; renderClone(); }
+});
+
 function renderUpload() {
   const total = uploadFiles.reduce((sum, file) => sum + file.size, 0);
   $("upload-destination").textContent = `Saves to ${uploadDestinations[uploadCategory()]}`;
   $("upload-selected").textContent = uploadFiles.length ? `${uploadFiles.length} files selected · ${bytes(total)}` : "No files selected";
   $("upload-controls").disabled = uploadBusy;
-  $("upload-start").disabled = uploadBusy || state.upload_active || !uploadFiles.length || !state.storage.ready || state.restart?.requested || total > state.storage.available;
+  $("upload-start").disabled = cloning() || uploadBusy || state.upload_active || !uploadFiles.length || !state.storage.ready || state.restart?.requested || total > state.storage.available;
   $("upload-start").textContent = uploadBusy ? "Uploading…" : "Upload selected";
   $("upload-readiness").textContent = uploadBusy ? ""
     : state.restart?.requested ? "The Library is restarting. Wait for it to come back online."

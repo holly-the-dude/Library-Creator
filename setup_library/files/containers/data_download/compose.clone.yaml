@@ -1,0 +1,10 @@
+# Optional: install the host clone service before using this override.
+services:
+  data_download:
+    volumes:
+      - type: bind
+        source: /run/library-clone
+        target: /run/library-clone
+        read_only: true
+        bind:
+          create_host_path: false

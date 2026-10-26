@@ -93,3 +93,34 @@ test('metadata renders as text and collection filters survive refreshes', () => 
   u.run(`state.catalog = []; renderZimFilters();`);
   assert.equal(u.nodes.get('zim-category').value, 'maps');
 });
+
+
+test('Clone tab works offline and reports used-data capacity and small destinations', () => {
+  const u = ui();
+  u.run(`source = 'clone'; state.internet.status = 'offline'; state.clone = {available:true,status:'idle',message:'Ready'};
+    cloneScan = {source:{device:'/dev/sda1',used:100*1024**3,required:105*1024**3},targets:[
+      {device:'/dev/sdb',model:'128 GB stick',size:128000000000,fits:true},
+      {device:'/dev/sdc',model:'64 GB stick',size:64000000000,fits:false}]}; renderFiles();`);
+  assert.equal(u.nodes.get('clone-panel').hidden, false);
+  assert.equal(u.nodes.get('download-panel').hidden, true);
+  assert.equal(u.nodes.get('upload-panel').hidden, true);
+  assert.equal(Boolean(u.nodes.get('clone-scan').disabled), false);
+  assert.match(u.nodes.get('clone-capacity').textContent, /Used: 100.0 GiB/);
+  assert.equal(Boolean(u.nodes.get('clone-targets').children[0].children[1].disabled), false);
+  assert.equal(u.nodes.get('clone-targets').children[1].children[1].disabled, true);
+  u.run(`state.clone.status = 'running'; state.clone.message = 'Copying'; state.clone.copied = 1024; renderClone();`);
+  assert.equal(u.nodes.get('clone-scan').disabled, true);
+  assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
+  assert.match(u.nodes.get('clone-status').textContent, /Copied 1.0 KiB/);
+});
+
+test('Clone controls explain missing host support and disable starting during transfers', () => {
+  const u = ui();
+  u.run(`source='clone'; state.clone={available:false,status:'unavailable',message:'Install host clone service'}; renderFiles();`);
+  assert.equal(u.nodes.get('clone-scan').disabled, true);
+  assert.match(u.nodes.get('clone-status').textContent, /Install host clone/);
+  u.run(`state.clone.available=true; state.upload_active=true;
+    cloneScan={source:{device:'/dev/sda1',used:100,required:200},targets:[{device:'/dev/sdb',model:'USB',size:300,fits:true}]}; renderClone();`);
+  assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
+  assert.match(u.nodes.get('clone-status').textContent, /Wait for transfers/);
+});

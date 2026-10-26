@@ -136,9 +136,97 @@ show_main_menu() {
     echo -e "  ${GREEN}2)${NC} Reinstall / Upgrade    - Git pull, then reinstall cleanup"
     echo -e "  ${GREEN}3)${NC} Restart Install        - Clear boot flags and install from scratch"
     echo -e "  ${GREEN}4)${NC} System Status          - Check installation progress"
+    echo -e "  ${GREEN}5)${NC} Install / Repair Clone - Enable cloning in Downloads"
     echo -e "  ${RED}q)${NC} Quit"
     separator
     echo -en "${WHITE}  Select option: ${NC}"
+}
+
+# Read-only preflight for the targeted service update. Keep this separate so a
+# second check after package installation catches work started in the meantime.
+check_clone_setup_idle() {
+    local downloader_running
+    downloader_running=$(podman inspect --format '{{.State.Running}}' data_download 2>/dev/null) || downloader_running=false
+    python3 - "$downloader_running" <<'PYCLONE'
+import json
+import os
+import socket
+import sys
+import urllib.request
+
+try:
+    path = '/run/library-clone/clone.sock'
+    if os.path.exists(path):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(15)
+            client.connect(path)
+            client.sendall(b'{"action":"status"}\n')
+            with client.makefile('rb') as stream:
+                response = json.loads(stream.readline(65536))
+        if not response.get('ok') or response['result']['status'] not in {'idle', 'complete', 'failed'}:
+            raise ValueError('Wait for the active clone to finish before updating its service.')
+    if sys.argv[1] == 'true':
+        with urllib.request.urlopen('http://127.0.0.1:4826/api/state', timeout=15) as response:
+            state = json.load(response)
+        if (state.get('upload_active') or state.get('refreshing')
+                or state.get('restart', {}).get('requested')
+                or state.get('clone', {}).get('status') in {'running', 'unknown'}
+                or any(job['status'] in {'queued', 'downloading', 'verifying', 'extracting'}
+                       for job in state['jobs'])):
+            raise ValueError('Wait for transfers, source refresh, cloning or restart to finish.')
+except Exception as exc:
+    print(f'Cannot safely update Clone: {exc}', file=sys.stderr)
+    sys.exit(1)
+PYCLONE
+}
+
+install_clone_service() {
+    local repository ansible file
+    repository=$(resolve_repository) || return 1
+    ansible=/root/.local/bin/ansible-playbook
+    if [[ ! -x "$ansible" ]]; then
+        ansible=$(command -v ansible-playbook) || {
+            msg_error "Ansible is not installed. Complete the Library installation first."
+            return 1
+        }
+    fi
+    for file in setup_library/01_install_ansible.yml \
+                setup_library/files/start_library.yml \
+                setup_library/files/library-clone.socket \
+                setup_library/files/library-clone.service \
+                setup_library/files/containers/data_download/clone_host.py; do
+        if [[ ! -f "$repository/$file" ]]; then
+            msg_error "Missing $repository/$file. Use the complete updated source folder."
+            return 1
+        fi
+    done
+    if ! podman image exists localhost/data_download:latest; then
+        msg_error "Install the updated data_download image first, then run this option again."
+        return 1
+    fi
+    if ! mountpoint -q /Library; then
+        msg_error "Mount the Library_USB drive at /Library before enabling Clone."
+        return 1
+    fi
+    check_clone_setup_idle || return 1
+    msg_step "Installing the host clone service and dependencies..."
+    "$ansible" "$repository/setup_library/01_install_ansible.yml" \
+        --tags clone_service -i localhost, -c local || return 1
+
+    # Installing packages can take time. Do not interrupt work admitted since
+    # the first check, and do not restart a helper in the middle of a clone.
+    check_clone_setup_idle || return 1
+    systemctl try-restart library-clone.service || return 1
+    systemctl is-active --quiet library-clone.socket || return 1
+    install -m 0755 "$repository/setup_library/files/start_library.yml" /root/start_library.yml || return 1
+
+    msg_step "Recreating the downloader with access to the clone socket..."
+    "$ansible" /root/start_library.yml --tags data_download -i localhost, -c local || return 1
+    if ! podman exec data_download test -S /run/library-clone/clone.sock; then
+        msg_error "The downloader cannot see the clone socket. Check the startup output."
+        return 1
+    fi
+    msg_ok "Clone is enabled. Refresh Downloads and open Clone."
 }
 
 show_display_menu() {
@@ -148,7 +236,7 @@ show_display_menu() {
     separator
     echo -e "  ${GREEN}1)${NC} TFT 3.5\"  (480x320)   - Larger TFT display"
     echo -e "  ${GREEN}2)${NC} TFT 2.4\"  (320x240)   - Compact TFT display"
-    echo -e "  ${GREEN}3)${NC} HDMI (auto-scale)     - Monitor, only stats messages"
+    echo -e "  ${GREEN}3)${NC} HDMI (auto-scale)     - Monitor, only stats messages / Headless"
     echo -e "  ${GREEN}4)${NC} HDMI desktop          - Monitor, Pi desktop + kiosk (use touchscreen or keyboard and mouse) browser"
     echo -e "  ${RED}b)${NC} Back to Main Menu"
     separator
@@ -1086,6 +1174,12 @@ if [ "$1" == "--auto" ]; then
     auto_run
 fi
 
+# Targeted setup for an existing Library, without running installation stages.
+if [[ "$1" == "--install-clone" ]]; then
+    install_clone_service
+    exit $?
+fi
+
 # Interactive mode
 DISP=""
 INSTALL_PASSWORD=""
@@ -1159,6 +1253,12 @@ while true; do
         4)
             # Status
             show_status
+            ;;
+        5)
+            if ! install_clone_service; then
+                msg_error "Clone setup stopped. Review the error above and retry."
+            fi
+            pause
             ;;
         q|Q)
             echo -e "${GREEN}Goodbye!${NC}"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Library disk cloning request socket
+
+[Socket]
+ListenStream=/run/library-clone/clone.sock
+SocketMode=0600
+DirectoryMode=0700
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

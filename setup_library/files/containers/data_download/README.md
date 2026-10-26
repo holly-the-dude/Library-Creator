@@ -50,6 +50,19 @@ For example, `Accounting.ZIP` extracts its PDFs beneath
 downloaded ZIP is removed after successful extraction. Existing destination
 files or category folders are kept and shown as **Already present**.
 
+## Clone a drive
+
+Select **Clone** to copy the running SD card or the `Library_USB` content drive
+to a spare USB stick or an SD card in a USB adapter plugged into the Pi. The
+destination can be smaller than the source: it needs room for the **used data
+plus filesystem overhead**. For example, 100 GB of content on a 512 GB source
+can fit on a 128 GB stick. The page checks capacity and requires confirmation
+before erasing the destination. Current system/content drives are protected.
+
+Cloning works offline and requires the optional host clone service. See
+[Clone setup and usage](docs/CLONE.md) for installation, supported layouts,
+progress, and testing. The existing startup cloning code is retained.
+
 ## Browse the ZIM Library
 
 Open **ZIM Library** in Downloads to browse the Kiwix catalog used by IIAB.
@@ -302,9 +315,8 @@ the drive itself to find `music`, `library`, `calibre`, and the other content
 folders. Keep application databases and configuration needed by the content
 you retain. Refresh or rescan readers if they still list removed files.
 
-The downloader has no file/folder deletion interface yet. That feature,
-satellite imagery downloads, and cloning to a same-size or larger USB stick
-are tracked in the repository's [TODO.md](../../../../TODO.md).
+The downloader has no file/folder deletion interface yet. That feature and
+satellite imagery downloads are tracked in the repository's [TODO.md](../../../../TODO.md).
 
 ### Space and integrity
 

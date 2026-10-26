@@ -34,12 +34,22 @@ msg_ok() { :; }
 msg_error() { printf 'ERROR:%s\n' "$1"; }
 pause() { echo PAUSED; }
 confirm() { return "$CONFIRM_STATUS"; }
+install_clone_service() { echo CLONE-SETUP; return "${CLONE_STATUS:-0}"; }
 do_first_boot() { printf 'FIRST:%s:%s\n' "$1" "$DISP"; return "${FIRST_STATUS:-0}"; }
 '''
         if settings.pop("real_confirm", False):
             stubs += re.search(r'^confirm\(\) \{\n.*?^\}',
                                BOOTSTRAP.read_text(), re.M | re.S).group() + '\n'
         return self.run_shell(stubs + '\nwhile true; do\n' + menu, inputs, **settings)
+
+    def test_clone_menu_runs_targeted_setup_without_starting_fresh_install(self):
+        result = self.run_menu('5\nq\n')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('CLONE-SETUP', result.stdout)
+        self.assertNotIn('FIRST:', result.stdout)
+        result = self.run_menu('5\nq\n', CLONE_STATUS='1')
+        self.assertIn('ERROR:Clone setup stopped.', result.stdout)
+        self.assertIn('PAUSED', result.stdout)
 
     def test_yes_variants_reach_installation_and_exit_without_another_menu(self):
         for reply in ('y', 'Y', 'yes', 'Yes', 'YES', 'yEs', ' yes '):

@@ -20,7 +20,7 @@
     <section class="sources" id="sources" aria-label="Download sources"></section>
     <section class="panel" aria-labelledby="catalog-title">
       <div class="section-heading"><div><h2 id="catalog-title">Available downloads</h2><p id="destination">Maps save to /Library/maps/pmtiles</p></div><span id="count" class="badge">Checking sources…</span></div>
-      <div class="tabs" role="group" aria-label="Content type"><button data-source="maps" aria-pressed="true">OpenStreetMap tiles</button><button data-source="streetzim" aria-pressed="false">StreetZim maps</button><button data-source="routing" aria-pressed="false">Routing</button><button data-source="wiki" aria-pressed="false">ZIM Library</button><button data-source="survivor" aria-pressed="false">Survivor Library</button><button data-source="upload" aria-pressed="false">Upload files</button></div>
+      <div class="tabs" role="group" aria-label="Content type"><button data-source="maps" aria-pressed="true">OpenStreetMap tiles</button><button data-source="streetzim" aria-pressed="false">StreetZim maps</button><button data-source="routing" aria-pressed="false">Routing</button><button data-source="wiki" aria-pressed="false">ZIM Library</button><button data-source="survivor" aria-pressed="false">Survivor Library</button><button data-source="upload" aria-pressed="false">Upload files</button><button data-source="clone" aria-pressed="false">Clone</button></div>
       <div id="download-panel">
       <div class="filters"><label class="search">Search downloads<input id="search" type="search" placeholder="Search a title, topic, region, or language"></label><label><input id="fits" type="checkbox"> Fits available space</label><label id="latest-label" hidden><input id="latest" type="checkbox" checked> Latest editions only</label></div>
       <div id="zim-filters" class="filters zim-filters" hidden>
@@ -32,6 +32,18 @@
       <div class="pager"><button id="previous" class="secondary">Previous</button><span id="page"></span><button id="next" class="secondary">Next</button></div>
       <div class="selection"><div><strong id="selected">No files selected</strong><p>Downloads run one at a time. You can close this page while they continue.</p></div><button id="download" disabled>Download selected</button></div>
       </div>
+      <section id="clone-panel" aria-label="Clone a drive" hidden>
+        <h3>Make a copy of your Library</h3>
+        <p>Choose what to copy, then plug a spare SD card in a USB SD adapter, or a spare USB stick, into the Library Pi.</p>
+        <label>Copy from <select id="clone-source"><option value="sd">SD card (bootable system)</option><option value="usb">Library_USB (content drive)</option></select></label>
+        <p>The destination only needs room for the used data plus filesystem overhead, even if the source drive is much larger. The SD copy does not include the separate Library_USB content drive.</p>
+        <p><strong>All data on the selected destination will be erased.</strong> Only unused, unmounted USB destinations are offered. The running SD card and Library_USB drive are protected.</p>
+        <button id="clone-scan" class="secondary">Scan for destination</button>
+        <p id="clone-capacity"></p>
+        <div id="clone-targets"></div>
+        <p id="clone-status" role="status" aria-live="polite"></p>
+        <p>Finish transfers first. Library readers will stop during the copy and start again afterward. Keep power and both drives connected until completion. You can close this page and return to check progress. Remove the finished clone before restarting.</p>
+      </section>
       <section id="upload-panel" aria-label="Upload files" hidden>
         <fieldset id="upload-controls">
           <legend>Choose where to save your files</legend>

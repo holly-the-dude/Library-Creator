@@ -41,6 +41,7 @@ ACTIVE = {"queued", "downloading", "verifying", "extracting"}
 INTERNET_POLL_SECONDS = 30
 OFFLINE_MESSAGE = "No Internet, its really hard to go on like this"
 CONTROL_SOCKET = "/run/library-control/control.sock"
+CLONE_SOCKET = "/run/library-clone/clone.sock"
 
 
 def restart_available():
@@ -61,6 +62,41 @@ def request_host_restart():
             message = response.readline(256)
         if message != b"OK\n":
             raise ValueError("Host did not confirm restart. Check library-control.service logs.")
+
+
+def clone_request(action, **values):
+    """Call the fixed host clone protocol; never accept commands or disk paths as actions."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(90 if action == "scan" else 15)
+            client.connect(CLONE_SOCKET)
+            client.sendall(json.dumps({"action": action, **values}).encode() + b"\n")
+            with client.makefile("rb") as stream:
+                line = stream.readline(65537)
+            if len(line) > 65536:
+                raise ValueError("Invalid host clone response")
+            response = json.loads(line)
+            if not response.get("ok"):
+                raise ValueError(response.get("error", "Host clone request failed"))
+            return response["result"]
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"Clone service: {exc}") from exc
+
+
+def clone_status():
+    if not os.path.exists(CLONE_SOCKET):
+        return {"available": False, "status": "unavailable",
+                "message": "Install the host clone service to enable cloning."}
+    try:
+        return {"available": True, **clone_request("status")}
+    except ValueError as exc:
+        # Fail closed when an installed service cannot tell us whether it is busy.
+        return {"available": False, "status": "unknown", "message": str(exc)}
+
+
+def check_clone_idle():
+    if clone_status()["status"] in {"running", "unknown"}:
+        raise ValueError("Wait for the clone to finish and its host service to respond")
 
 
 class Cancelled(Exception):
@@ -361,9 +397,21 @@ class Application:
         self.restart_requested = False
         self.upload_active = False
 
+    def clone(self, action, body):
+        with self.lock:
+            check_clone_idle()
+            if self.restart_requested:
+                raise ValueError("The Library is restarting")
+            if action == "start":
+                if self.upload_active or self.refreshing or any(job["status"] in ACTIVE for job in self.jobs.values()):
+                    raise ValueError("Wait for uploads, downloads and source refresh to finish before cloning")
+                return clone_request("start", token=body.get("token"), confirmation=body.get("confirmation"))
+            return clone_request("scan", source=body.get("source"))
+
     def upload(self, stream, length, category, name):
         """Serialize local uploads and exclude host restart while bytes are written."""
         with self.lock:
+            check_clone_idle()
             if self.restart_requested:
                 raise ValueError("The Library is restarting; wait for it to come back online")
             if self.upload_active:
@@ -378,6 +426,7 @@ class Application:
     def restart(self):
         """Serialize restart with queue admission; wait for every active job."""
         with self.lock:
+            check_clone_idle()
             if self.restart_requested:
                 return
             if self.upload_active or any(job["status"] in ACTIVE for job in self.jobs.values()):
@@ -433,7 +482,7 @@ class Application:
     def refresh(self):
         """Start one asynchronous catalog refresh if online and no scan is active."""
         with self.lock:
-            if self.refreshing or self.internet["status"] != "online":
+            if clone_status()["status"] in {"running", "unknown"} or self.refreshing or self.internet["status"] != "online":
                 return
             self.refreshing = True
             for source in self.sources.values():
@@ -504,6 +553,7 @@ class Application:
                 raise ValueError(self.internet["message"])
         self.storage.space()
         with self.lock:
+            check_clone_idle()
             if self.restart_requested:
                 raise ValueError("The Library is restarting; wait for it to come back online")
             rows = []
@@ -611,6 +661,7 @@ class Application:
             disk = self.storage.status()
             result = {"storage": disk, "internet": self.internet.copy(),
                       "upload_active": self.upload_active,
+                      "clone": clone_status(),
                       "sources": copy.deepcopy(self.sources),
                       "refreshing": self.refreshing, "jobs": copy.deepcopy(list(self.jobs.values())),
                       "token": self.token,
@@ -698,12 +749,17 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("Expected a JSON object")
             if self.path == "/api/download":
                 self.server.app.enqueue(body.get("ids"))
+            elif self.path in {"/api/clone/scan", "/api/clone/start"}:
+                result = self.server.app.clone(self.path.rsplit("/", 1)[-1], body)
+                return self.respond(202, result)
             elif self.path == "/api/restart":
                 self.server.app.restart()
             elif self.path == "/api/routing":
                 if "filename" not in body:
                     raise ValueError("Specify a routing filename, or null to cancel")
-                routing.Routing(self.server.app.storage).select(body["filename"])
+                with self.server.app.lock:
+                    check_clone_idle()
+                    routing.Routing(self.server.app.storage).select(body["filename"])
             elif self.path == "/api/refresh":
                 self.server.app.refresh()
             elif self.path == "/api/cancel":

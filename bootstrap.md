@@ -42,6 +42,7 @@ native resolution or an explicitly selected resolution.
 | Reinstall / Upgrade | Confirm, run `git pull --ff-only` in `/root/Library-Creator`, then perform reinstall cleanup and exit |
 | Restart Install | Clear stage flags and run the same fresh installation from First Boot |
 | System Status | Show stage flags, uptime and whether Ansible is running |
+| Install / Repair Clone | Install the host clone service and recreate the downloader with its socket mount |
 
 **USB storage may be erased during First Boot.** The installer prepares a detected
 USB content disk as exFAT with the label `Library_USB` when that label is absent.
@@ -65,6 +66,32 @@ install the updated checkout, including any changes to bootstrap itself.
 This is a full reinstall, not a routine service update. The cleanup does not
 delete USB content, but First Boot can subsequently format storage as described
 above.
+
+## Enable Clone on an existing Library
+
+Use the updated source folder on the Pi and choose **5) Install / Repair Clone**,
+or run the same targeted setup directly:
+
+```bash
+sudo bash /root/Library-Creator/bootstrap --install-clone
+```
+
+The source folder may have another name; bootstrap resolves the folder you
+launched. This uses the already installed `localhost/data_download:latest`
+image, which must include the Clone interface. Build/load that updated image
+first if needed. Keep `Library_USB` mounted at `/Library` and finish transfers,
+source refresh and cloning before starting. Package installation needs internet.
+
+Bootstrap installs the dependencies and host helper through the `clone_service`
+Ansible tasks, enables the socket, reloads an idle running helper, installs the
+updated `/root/start_library.yml`, and recreates the downloader using only the
+`data_download` tasks. It checks that the socket is visible inside the container.
+The page will briefly disconnect; refresh it and select **Clone** afterward.
+This option does not run the full reinstall cleanup, change boot-stage flags,
+or reboot. Fresh installs include the host service in Second Boot automatically.
+
+See [Clone setup and usage](setup_library/files/containers/data_download/docs/CLONE.md)
+for supported drives and manual installation commands.
 
 ## Boot stages
 

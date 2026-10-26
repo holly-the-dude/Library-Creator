@@ -267,3 +267,9 @@ to cancel the pending choice. Missing fields, unverified files, unsafe names, an
 insufficient space return `400`; success returns `202`. No internet connection
 is required to select an already-downloaded file. Selection never changes the
 running routing engine. Use the updated appliance startup playbook to activate it.
+
+## Cloning
+
+The optional host clone service adds `/api/clone/scan`, `/api/clone/start`, and
+the `clone` state object. See [Clone API and setup](CLONE.md#api-and-testing)
+for request bodies, confirmation, capacity checks, and operation states.

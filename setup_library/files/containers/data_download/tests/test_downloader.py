@@ -513,6 +513,19 @@ class HTTPTests(unittest.TestCase):
                 self.assertEqual(response.status, 202)
             restart.assert_called_once()
 
+    def test_clone_endpoints_require_token_and_forward_only_fixed_fields(self):
+        with patch.object(app, "clone_status", return_value={"status": "idle"}), patch.object(app, "clone_request", return_value={"targets": []}) as clone:
+            for action, body in [("scan", {"source": "usb"}), ("start", {"token": "selection", "confirmation": "/dev/sdb"})]:
+                request = Request(self.base + "/api/clone/" + action, data=json.dumps(body).encode())
+                with self.assertRaises(HTTPError) as error:
+                    urlopen(request)
+                self.assertEqual(error.exception.code, 403)
+                request.add_header("X-Library-Token", self.application.token)
+                with urlopen(request) as response:
+                    self.assertEqual(response.status, 202)
+                    self.assertEqual(json.load(response), {"targets": []})
+                clone.assert_called_with(action, **body)
+
     def test_broken_access_log_pipe_does_not_abort_http_response(self):
         # A stopped container log collector can leave stderr with no reader.
         broken_log = unittest.mock.Mock()

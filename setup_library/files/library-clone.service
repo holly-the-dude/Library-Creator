@@ -1,0 +1,10 @@
+[Unit]
+Description=Clone Library SD cards and USB drives
+Requires=library-clone.socket
+After=library-clone.socket
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/library_clone.py
+# Must see host mounts/devices and rootful Podman. No mount namespace:
+# private /tmp or ProtectSystem would change the source being cloned.
+NoNewPrivileges=true
