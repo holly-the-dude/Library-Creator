@@ -146,6 +146,10 @@ When the final boot finishes:
 1. On another device (phone, laptop), look for an **open WiFi network named `library`** and connect to it.
 2. Open a browser to **`http://library`** (or `http://10.1.1.1`).
 3. You should see the Library home page with links to whatever content you installed.
+4. Open **Music** to choose **Music library (LMS)** or **iPod-style player**, and
+   **Maps** to choose **OpenStreetMap** or **StreetZim**. A choice labelled
+   **Not running** did not pass its service check. StreetZim and the iPod-style
+   player can open with empty content folders when their images are installed.
 
 You can also check status directly on the Pi:
 
@@ -201,7 +205,7 @@ mappings, supported firmware, SSH access, and upgrades from older images.
 
 ## Adding map content (tiles + routing)
 
-The Maps service has two independent kinds of data, both stored on the USB under
+The **Maps → OpenStreetMap** viewer has two independent kinds of data, both stored on the USB under
 `/Library/maps`:
 
 | Data | Path on the USB | Purpose |
@@ -327,3 +331,35 @@ is holding the interface, the hotspot container can't start. See the hotspot not
 
 For a deeper reference on every menu option, boot stage, and file location, see
 [`bootstrap.md`](../bootstrap.md) in the repository root.
+
+## Add offline collections after installation
+
+For music, use **Downloads → Upload files → Music files**. Both players read
+`/Library/music`. Open **Music → Music library (LMS)** and run its scanner, or
+**Music → iPod-style player** and press **Rescan music folder**. The iPod-style
+player uses port 2001 and needs no LMS database. See the
+[music player guide](../setup_library/files/containers/music_player/README.md)
+for adding it to an existing appliance, and the [Usage Guide](USAGE.md#using-the-music-player)
+for playback controls.
+
+Open **Downloads → ZIM Library** to browse Kiwix collections with readable
+titles, descriptions, sizes, and language filters. English is selected by
+default. Choose **Maps (ZIM)** in the Collection filter for offline map archives,
+or browse Wikipedia, books, travel guides, and other available collections.
+Download selected files, then restart the Library to make them available in
+its **Wikipedia / Kiwix** reader.
+
+For regional StreetZim archives, choose **Downloads → StreetZim maps**. Completed
+files save to the same `/Library/wiki` folder on the USB. Restart StreetZim or
+the Library, then choose **Maps → StreetZim** on the homepage. The Maps menu
+also offers **OpenStreetMap**, which uses PMTiles from **Downloads → OpenStreetMap
+tiles** and GraphHopper data from **Downloads → Routing**.
+
+With the updated images and startup playbook, StreetZim owns the auto-detected
+USB GPS and both map viewers share its position. OpenStreetMap can be stopped
+without interrupting StreetZim's GPS. See the
+[StreetZim integration instructions](../setup_library/files/containers/street_zim/README.md#install-the-integrated-maps-menu-and-startup)
+for upgrading an existing appliance.
+
+See the [downloader guide](../setup_library/files/containers/data_download/README.md#browse-the-zim-library)
+for browsing and updating the downloader on an existing installation.

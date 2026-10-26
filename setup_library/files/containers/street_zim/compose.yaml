@@ -1,0 +1,36 @@
+services:
+  street_zim:
+    image: localhost/street_zim:latest
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-localhost/rasbase_master:latest}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8093/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    ports:
+      - "${STREET_ZIM_PORT:-8093}:8093"
+    environment:
+      GPS_MODE: relay
+      GPS_UPSTREAM: "${GPS_UPSTREAM:-http://10.88.0.212:8080}"
+    volumes:
+      - type: bind
+        source: "${STREET_ZIM_DIR:-/Library/wiki}"
+        target: /data
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      library:
+        ipv4_address: "${STREET_ZIM_IP:-10.88.0.216}"
+
+# Join the appliance's existing bridge; do not change its network or services.
+networks:
+  library:
+    external: true
+    name: "${STREET_ZIM_NETWORK:-podman}"

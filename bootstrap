@@ -26,7 +26,8 @@ BOOTSTRAP_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 REPOSITORY_FILE=/root/.library-repository
 
 is_library_checkout() {
-    [[ -e "$1/.git" && -f "$1/bootstrap" && -d "$1/setup_library" ]]
+    # Fresh installs also support copied or extracted source trees without Git.
+    [[ -f "$1/bootstrap" && -d "$1/setup_library" ]]
 }
 
 resolve_repository() {
@@ -58,7 +59,7 @@ resolve_repository() {
         printf '%s\n' "${matches[0]}"
         return 0
     fi
-    msg_error "Cannot select a unique Library checkout. Run bootstrap directly from the intended clone." >&2
+    msg_error "Cannot select a unique Library source folder. Run bootstrap directly from the intended clone or copy containing setup_library." >&2
     return 1
 }
 
@@ -111,9 +112,10 @@ separator() {
 
 confirm() {
     local prompt="${1:-Are you sure?}"
-    echo -en "${YELLOW}${prompt} [y/N]: ${NC}"
-    read -r response
-    [[ "$response" =~ ^[Yy]$ ]]
+    local response
+    echo -en "${YELLOW}${prompt} [y/yes/N]: ${NC}"
+    read -r response || return 1
+    [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]
 }
 
 pause() {
@@ -272,7 +274,7 @@ check_uptime() {
 do_reinstall() {
     local repository
     repository=$(resolve_repository) || return 1
-    msg_info $repository
+    msg_info "$repository"
     msg_info "This will update $repository with git pull before reinstalling."
     msg_warn "This will remove all installation progress and container images!"
     separator
@@ -301,7 +303,7 @@ do_reinstall() {
         printf '%s\n' "$repository" > "$REPOSITORY_FILE" || return 1
         ensure_trixie "$repository" || return 1
         msg_step "Removing boot flags and install files..."
-        cd /root
+        cd /root || return 1
         rm -frv \
             .0boot \
             bootstrap \
@@ -329,9 +331,9 @@ do_reinstall() {
         echo "║  And do a fresh install                          ║"
         echo "╚══════════════════════════════════════════════════╝"   
         sleep 10
-        cd $repository
-        ./bootstrap 
-        exit 0
+        cd "$repository" || return 1
+        ./bootstrap
+        exit $?
     else
         msg_info "Reinstall / upgrade cancelled"
     fi
@@ -506,7 +508,7 @@ do_first_boot() {
     mkdir -p /root/install
     cd /root/install
     ######################################################
-    # since we did a git clone were going to move it here
+    # Stage the selected clone or source copy here.
     # #####################################################
     cp -r "$repository/"* . || return 1
     cp "$repository/bootstrap" /root/bootstrap || return 1
@@ -1140,9 +1142,14 @@ while true; do
             echo -e "  Display: ${CYAN}${DISP_DESC}${NC}"
             # echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
             echo
-            msg_warn "This will clear all installation boot flags and rerun First Boot."
+            # msg_warn "Running First Boot."
             if confirm "Proceed with fresh installation?"; then
-                do_first_boot --fresh
+                if do_first_boot --fresh; then
+                    # First Boot has requested a reboot; do not show the menu again.
+                    exit 0
+                fi
+                msg_error "First Boot stopped. Review the error above before retrying."
+                pause
             fi
             ;;
         2)

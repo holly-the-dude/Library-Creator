@@ -20,6 +20,7 @@
 #   3. Start the hotspot container (provides the Wi-Fi network).
 #   4. Conditionally start each content service ONLY if its data exists:
 #        - Wiki   (Kiwix / .zim files under /Library/wiki)
+#        - StreetZim (when installed; starts even without ZIMs to provide GPS)
 #        - Maps   (tiles under /Library/maps)
 #        - Music  (media under /Library/music, LMS database in /Library/.music_data)
 #        - E-books (Calibre-Web, library under /Library/calibre)
@@ -41,6 +42,7 @@
 #   wiki           10.88.0.200  :6902
 #   www (library)  10.88.0.201  :80
 #   music          10.88.0.210  :9099 -> container 5082
+#   music_player   10.88.0.217  :2001 -> container 8080 (optional iPod-style UI)
 #   ebook (calibre)10.88.0.211  :8083
 #   maps           10.88.0.212  :8080
 #   graphhopper    10.88.0.213  :8989   (maps routing; reached via maps /api/route)
@@ -48,6 +50,7 @@
 #   meshflash      10.88.0.214  :8086   (setup TUI when no radio responds;
 #                                        mutually exclusive with meshtastic)
 #   data_download  10.88.0.215  :4826 -> container 4286 (when image installed)
+#   street_zim     10.88.0.216  :8093 (shared ZIMs and USB GPS owner when installed)
 #
 # NOTE ON MODULE NAMES
 #   All task modules use Fully Qualified Collection Names (FQCN), e.g.
@@ -66,6 +69,9 @@
     # A by-id path survives tty renumbering; baud must match the receiver's NMEA.
     gps_port: ""
     gps_baud: 9600
+    # StreetZim owns the receiver; library_maps relays its GPS API. Disable to
+    # use the previous maps-owned serial reader, or omit the StreetZim image.
+    street_zim_enabled: true
 
     # Empty selects the single USB device that answers the Meshtastic protocol.
     # A USB bridge VID or an esptool chip match alone does not identify Meshtastic.
@@ -633,6 +639,81 @@
         become: true
 
     ###############################
+    # STREETZIM — start whenever installed, even with an empty ZIM folder, so
+    # the GPS feed remains independent of the PMTiles viewer and its map data.
+    # Both readers use /Library/wiki; StreetZim maintains a private catalog.
+    # ---------------------------------------------------------------------
+    - name: check optional StreetZim image
+      ansible.builtin.command: podman image exists localhost/street_zim:latest
+      register: street_zim_image
+      changed_when: false
+      failed_when: street_zim_image.rc not in [0, 1]
+
+    - name: initialize StreetZim GPS ownership
+      ansible.builtin.set_fact:
+        street_zim_active: false
+
+    - name: release GPS from a disabled StreetZim service
+      when: not (street_zim_enabled | bool) or street_zim_image.rc != 0
+      ansible.builtin.command: podman stop --ignore street_zim
+
+    - name: start StreetZim and its shared GPS feed
+      when:
+        - street_zim_enabled | bool
+        - street_zim_image.rc == 0
+      block:
+        # Release the old serial reader BEFORE handing the receiver to StreetZim.
+        - name: stop the previous Maps GPS reader
+          ansible.builtin.command: podman stop --ignore library_maps
+
+        - name: start StreetZim container
+          ansible.builtin.command:
+            argv:
+              - podman
+              - run
+              - -d
+              - --name=street_zim
+              - --replace
+              - --restart=unless-stopped
+              - --privileged
+              - --ip=10.88.0.216
+              - -p
+              - '8093:8093'
+              - -v
+              - /Library/wiki:/data:ro
+              # Bind directory for receivers attached/reconnected after boot.
+              # Never relabel the host /dev tree.
+              - -v
+              - /dev:/dev
+              - -e
+              - GPS_MODE=serial
+              - -e
+              - "GPS_PORT={{ gps_port }}"
+              - -e
+              - "GPS_BAUD={{ gps_baud }}"
+              - localhost/street_zim:latest
+
+        - name: wait for StreetZim reader (GPS fix is not required)
+          ansible.builtin.uri:
+            url: http://127.0.0.1:8093/health
+            return_content: true
+          register: street_zim_health
+          until: (street_zim_health.json | default({})).get('ready', false)
+          retries: 30
+          delay: 2
+
+        - name: use StreetZim as the shared GPS owner
+          ansible.builtin.set_fact:
+            street_zim_active: true
+      rescue:
+        # Do not fall back while a restarting StreetZim still has device access.
+        - name: release receiver after StreetZim startup failure
+          ansible.builtin.command: podman stop --ignore street_zim
+        - name: report Maps GPS fallback
+          ansible.builtin.debug:
+            msg: "StreetZim failed to start. OpenStreetMap will use its local GPS reader. Check podman logs street_zim."
+
+    # ---------------------------------------------------------------------
     # MAPS — started only if tiles exist under /Library/maps.
     # Serves the offline maps UI on 10.88.0.212:8080.
     #
@@ -816,17 +897,18 @@
             displayit start_08_starting_maps.jpg
           become: true
 
-        # Share host device nodes so a USB GPS can appear/reconnect after boot.
-        # This container is already privileged; never SELinux-relabel host /dev.
-        # Avoid mapping one tty node: it may not exist at boot and can change
-        # after reconnection. The GPS service retries discovery in the background.
+        # Share StreetZim's feed when available, with no local device access.
+        # Without StreetZim, retain the existing hot-plug serial GPS behavior.
         - name: start maps
-          ansible.builtin.shell: |
-            podman run -d --name library_maps --ip 10.88.0.212 --replace --privileged --restart unless-stopped \
-              --add-host graphhopper:10.88.0.213 \
-              -v /dev:/dev \
-              -e GPS_PORT={{ gps_port | quote }} -e GPS_BAUD={{ gps_baud | string | quote }} \
-              -p 8080:8080 -v /Library/maps:/storage/maps localhost/library_maps:latest
+          ansible.builtin.command:
+            argv: >-
+              {{ ['podman', 'run', '-d', '--name=library_maps', '--ip=10.88.0.212',
+                  '--replace', '--restart=unless-stopped', '--add-host=graphhopper:10.88.0.213',
+                  '-p', '8080:8080', '-v', '/Library/maps:/storage/maps']
+                 + (['-e', 'GPS_UPSTREAM=http://10.88.0.216:8093'] if street_zim_active else
+                    ['--privileged', '-v', '/dev:/dev', '-e', 'GPS_PORT=' ~ gps_port,
+                     '-e', 'GPS_BAUD=' ~ (gps_baud | string)])
+                 + ['localhost/library_maps:latest'] }}
           register: mapsstart
 
         - name: debug show mapsstart
@@ -1105,6 +1187,50 @@
                 displayit start_035_music_started.jpg
                 sleep 2
               become: true
+
+    # The optional click-wheel player shares the music files read-only with LMS.
+    # It also supports an empty folder, so uploads can be picked up by Rescan.
+    - name: check optional music player image
+      ansible.builtin.command: podman image exists localhost/music_player:latest
+      register: music_player_image
+      changed_when: false
+      failed_when: music_player_image.rc not in [0, 1]
+
+    - name: start optional iPod-style music player
+      when: music_player_image.rc == 0
+      block:
+        - name: start music player container
+          ansible.builtin.command:
+            argv:
+              - podman
+              - run
+              - -d
+              - --name=music_player
+              - --replace
+              - --restart=unless-stopped
+              - --read-only
+              - --network=podman
+              - --ip=10.88.0.217
+              - -p
+              - '2001:8080'
+              - -v
+              - /Library/music:/music:ro
+              - localhost/music_player:latest
+
+        - name: wait for music player
+          ansible.builtin.uri:
+            url: http://127.0.0.1:2001/
+            return_content: true
+          register: music_player_health
+          until: "'<title>Library Music</title>' in (music_player_health.content | default(''))"
+          retries: 15
+          delay: 2
+      rescue:
+        - name: stop failed music player
+          ansible.builtin.command: podman stop --ignore music_player
+        - name: report optional music player failure
+          ansible.builtin.debug:
+            msg: "The iPod-style music player did not start. Check podman logs music_player. Library startup will continue."
 
     ###############################
     # E-BOOKS (Calibre-Web) — started only if /Library/calibre has content.

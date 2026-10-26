@@ -1,7 +1,7 @@
 ARG BASE_IMAGE=localhost/rasbase_master:latest
 FROM ${BASE_IMAGE}
 
-LABEL description="Library content downloader for PMTiles, Wikipedia ZIMs and Survivor Library PDFs"
+LABEL description="Library content downloader for PMTiles, Kiwix and StreetZim archives, and Survivor Library PDFs"
 RUN apt-get update && \
     apt-get install -y --no-install-recommends python3 ca-certificates && \
     rm -rf /var/lib/apt/lists/*

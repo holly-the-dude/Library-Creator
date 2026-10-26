@@ -2,6 +2,12 @@
 
 The music container runs [LMS (Lightweight Music Server)](https://github.com/epoupon/lms) to provide a web-based music streaming interface. It serves audio files from the library and supports the Subsonic API for mobile clients.
 
+Open **Music → Music library (LMS)** on the Library home page to use its `/music`
+proxy with automatic login. The same menu also offers the separate
+[iPod-style player](../music_player/README.md) on port 2001. Both read
+`/Library/music`; LMS uses its own database and scanner, while the iPod-style
+player uses **Rescan music folder** and needs no LMS database.
+
 ## File Structure
 
 ```

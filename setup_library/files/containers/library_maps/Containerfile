@@ -45,6 +45,7 @@ COPY gps-control.js gps-control.css /var/www/html/
 COPY map-ui.js map-theme.css /var/www/html/
 # Keep the service beside its parser for Python imports, outside the web root.
 COPY read_gps.py gps_service.py /usr/local/lib/library_maps/
+COPY configure_gps.py /usr/local/lib/library_maps/
 # Keep bundled fonts/sprites outside the mount, then fill missing USB assets at
 # startup. Vendored files allow offline builds after the base/dependencies exist.
 COPY basemaps-assets/ /opt/library_maps/basemaps-assets/

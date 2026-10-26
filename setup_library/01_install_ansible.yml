@@ -28,28 +28,6 @@
         msg:
           - "{{ whowhatwhere }}"
       tags: runthis
-#################################
-#
-#################################
-    - name: setup ssh keys
-      copy:
-        src: files/dotssh.tar
-        dest: /tmp/dotssh.tar
-
-    - name: dotssh
-      shell: |
-        cd /root/.ssh
-        /usr/bin/tar xvf /tmp/dotssh.tar
-        pwd
-        hostname
-        rm -f /tmp/dotssh.tar
-        ssh-keyscan localhost >> ~/.ssh/known_hosts
-      register: dotssh
-      ignore_errors: true
-      become: true
-
-    - debug: var=dotssh.stdout_lines
-
     ################################
     # Setup display
     ################################

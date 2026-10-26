@@ -42,7 +42,7 @@ class DiscoveryTests(unittest.TestCase):
     """Check connectivity heuristics and catalog parsing without remote requests."""
     def test_internet_probe_tries_another_host_when_one_is_down(self):
         response = Response(b"")
-        response.geturl = lambda: "https://dumps.wikimedia.org/"
+        response.geturl = lambda: "https://library.kiwix.org/"
         with patch.object(sources, "urlopen", side_effect=[URLError("offline"), response]) as request:
             self.assertTrue(sources.internet_available())
         self.assertEqual(request.call_count, 2)
@@ -52,7 +52,7 @@ class DiscoveryTests(unittest.TestCase):
     def test_internet_probe_reports_offline_when_all_hosts_fail(self):
         with patch.object(sources, "urlopen", side_effect=URLError("DNS failed")) as request:
             self.assertFalse(sources.internet_available())
-        self.assertEqual(request.call_count, 4)
+        self.assertEqual(request.call_count, 5)
 
     def test_server_rate_limit_still_means_internet_is_available(self):
         error = HTTPError("https://github.com/", 429, "Rate limited", {}, io.BytesIO())
@@ -153,6 +153,61 @@ class StorageTests(unittest.TestCase):
             app.stream_download(self.row(data), part, self.storage, self.event, self.progress)
         app.verify(self.row(data), part, self.event)
         self.assertEqual(part.read_bytes(), data)
+
+    def zim_transfer(self, data, advertised=1024):
+        """Return a Kiwix row and exact metadata with intentionally rounded OPDS size."""
+        row = sources.item("wiki", "https://lb.download.kiwix.org/zim/maps/test.zim", advertised)
+        digest = hashlib.sha256(data).hexdigest()
+        xml = f'''<metalink xmlns="urn:ietf:params:xml:ns:metalink"><file name="test.zim">
+          <size>{len(data)}</size><hash type="sha-256">{digest}</hash></file></metalink>'''
+        return row, xml
+
+    def test_rounded_zim_catalog_size_downloads_and_verifies(self):
+        for size, has_length in [(735, True), (1100, True), (735, False)]:
+            data = b"ZIM\x04" + b"x" * (size - 4)
+            row, xml = self.zim_transfer(data)
+            part = self.root / f"zim-{size}-{has_length}.part"
+            headers = {"Content-Length": str(size)} if has_length else {}
+            with self.subTest(size=size, has_length=has_length), patch.object(sources, "fetch", return_value=xml), \
+                    patch.object(sources, "open_url", return_value=Response(data, headers=headers)):
+                app.stream_download(row, part, self.storage, self.event, self.progress)
+                app.verify(row, part, self.event)
+            self.assertEqual(row["size"], size)
+            self.assertEqual(part.read_bytes(), data)
+            self.assertEqual(json.loads(part.with_suffix(".json").read_text())["total"], size)
+
+    def test_rounded_zim_resume_uses_exact_total(self):
+        data = b"ZIM\x04" + b"x" * 731
+        row, xml = self.zim_transfer(data)
+        part = self.root / "zim.part"
+        part.write_bytes(data[:100])
+        app.atomic_json(part.with_suffix(".json"), {"url": row["url"], "total": len(data), "etag": '"v1"'})
+        response = Response(data[100:], 206, {"Content-Range": f"bytes 100-{len(data)-1}/{len(data)}", "ETag": '"v1"'})
+        with patch.object(sources, "fetch", return_value=xml), patch.object(sources, "open_url", return_value=response) as request:
+            app.stream_download(row, part, self.storage, self.event, self.progress)
+            app.verify(row, part, self.event)
+        self.assertEqual(request.call_args.args[1]["Range"], "bytes=100-")
+        # A new retry starts from the rounded catalog row again. Complete exact
+        # bytes must go straight to verification, rather than an invalid Range.
+        row, xml = self.zim_transfer(data)
+        with patch.object(sources, "fetch", return_value=xml), patch.object(sources, "open_url") as request:
+            app.stream_download(row, part, self.storage, self.event, self.progress)
+            app.verify(row, part, self.event)
+        request.assert_not_called()
+
+    def test_zim_mirror_size_and_checksum_still_checked(self):
+        data = b"ZIM\x04" + b"x" * 731
+        row, xml = self.zim_transfer(data)
+        part = self.root / "zim.part"
+        with patch.object(sources, "fetch", return_value=xml), \
+                patch.object(sources, "open_url", return_value=Response(data, headers={"Content-Length": "736"})):
+            with self.assertRaisesRegex(ValueError, "Source size changed"):
+                app.stream_download(row, part, self.storage, self.event, self.progress)
+        self.assertFalse(part.exists())
+        # Correct length and magic are insufficient if the bytes are corrupt.
+        part.write_bytes(data[:-1] + b"y")
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            app.verify(row, part, self.event)
 
     def test_resume_uses_range_and_if_range(self):
         data = b"PMTiles\x03example"
@@ -276,17 +331,18 @@ class StorageTests(unittest.TestCase):
         def discover(key, publish):
             if key == "survivor":
                 raise OSError("offline")
-            publish([sources.item(key, "https://example.org/test." + ("zim" if key == "wiki" else "pmtiles"))])
+            publish([sources.item(key, "https://example.org/test." + ("zim" if key in {"wiki", "streetzim"} else "pmtiles"))])
             return ""
 
         with patch.object(sources, "discover", side_effect=discover):
             application.refresh_all()
         self.assertEqual(application.sources["maps"]["status"], "available")
+        self.assertEqual(application.sources["streetzim"]["status"], "available")
         self.assertEqual(application.sources["survivor"]["status"], "unavailable")
         self.assertIn(cached["id"], application.catalog)
         loaded = app.Application(self.storage)
         loaded.load_cache()
-        self.assertEqual(len(loaded.catalog), 4)
+        self.assertEqual(len(loaded.catalog), len(sources.SOURCES))
 
     def test_queue_rejects_unknown_and_duplicate_downloads(self):
         application = app.Application(self.storage)

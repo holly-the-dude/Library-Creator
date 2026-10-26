@@ -17,6 +17,12 @@ cd Library-Creator
 ./bootstrap
 ```
 
+For testing, you can also copy or extract the project without its `.git` folder.
+Keep `bootstrap` and the complete `setup_library` directory together, run
+`./bootstrap` from that copy, and choose **Fresh Install** or **Restart Install**.
+The source folder can have any name. **Reinstall / Upgrade** still requires a Git
+checkout because it updates the source with `git pull`.
+
 First Boot copies the checkout into `/root/install` and the script into
 `/root/bootstrap`. The current installer uses this checkout; it does not download
 an encrypted `install.zip` or ask for an archive password during Fresh Install.
@@ -75,6 +81,15 @@ The build includes both `localhost/meshtastic:latest` and
 `localhost/meshflash:latest`. The build script requires both radio Containerfiles.
 Meshflash downloads its ESP32 firmware snapshot during this build so firmware
 setup later works offline. Installing the Library does not flash a connected radio.
+
+Container discovery also builds `street_zim`, `music_player`, and `data_download`
+from their folders. Podman builds use `--format docker` to preserve image health
+checks; Docker itself is not required. At normal startup, installed StreetZim
+and iPod-style player images start even with empty content folders. The hub's
+**Maps** and **Music** menus offer both viewers and both players respectively.
+StreetZim supplies shared USB GPS when healthy; see the
+[runtime GPS behavior](docs/DEVELOPERS.md#maps-gps-internals) and
+[deployment steps](docs/DEVELOPERS.md#deploying-the-updated-menus-and-containers).
 
 ### Second Boot
 

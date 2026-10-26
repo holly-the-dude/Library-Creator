@@ -38,11 +38,16 @@ The home page acts as a hub. Depending on what's installed, you may see:
 | Service | What it is | How to open it |
 |---------|-----------|----------------|
 | **Wiki** | [Zim File Downloads](https://dumps.wikimedia.org/kiwix/zim/wikipedia/) An offline copy of Wikipedia (and possibly other Kiwix content) | Home page link, or `http://10.1.1.1:6902` |
-| **Music** | A web music player with your audio library | Home page link, or `http://10.1.1.1:9099` |
+| **Music → Music library (LMS)** | Browse your audio library by artist, album, or track | Home page menu, or `http://library/music` |
+| **Music → iPod-style player** | Click-wheel player with Purple and Classic skins | Home page menu, or `http://10.1.1.1:2001` |
 | **eBook Reader** | Browse, read, and download e-books | Home page link, or `http://10.1.1.1:8083` |
-| **Maps** | Offline interactive maps with a state/region selector, turn-by-turn driving directions, and a layer on/off panel | Home page link, or `http://10.1.1.1:8080` |
+| **Maps → OpenStreetMap** | Offline interactive maps with a state/region selector, driving directions, and map layers | Home page menu, or `http://10.1.1.1:8080` |
+| **Maps → StreetZim** | Regional map archives with search and navigation, depending on the archive | Home page menu, or `http://10.1.1.1:8093` |
 | **[Meshtastic Communications](#meshtastic-communications)** | Send and receive mesh messages through the Pi's USB radio; includes firmware setup | Home page link, or `http://10.1.1.1:8086` |
 | **Downloads** | Download new content or upload your own music, data, and ebooks | Home page link, or `http://10.1.1.1:4826` |
+
+**Music** and **Maps** open menus with two choices each. A choice marked
+**Not running** is unavailable; available choices open in a new browser tab.
 
 You can share the device with many people at once - up to about 90 devices can connect to
 the WiFi hotspot simultaneously.
@@ -81,12 +86,14 @@ The light-blue panel shows USB capacity and free space. Selected tabs and upload
 categories have a gold (`#f3b41e`) background with dark text. Selected download
 rows have a purple highlight and a gold marker on the left. The page also shows
 availability of each source.
-Choose files under Maps, Wikipedia, or Survivor Library and press **Download
+Choose a source tab and files, then press **Download
 selected**. You can search the list, filter files that fit, and watch or cancel
 downloads in the queue. Downloads continue if you close the browser.
 
-- Maps are saved to `/Library/maps/pmtiles`.
-- Wikipedia ZIMs are saved to `/Library/wiki`.
+- **OpenStreetMap tiles** saves PMTiles to `/Library/maps/pmtiles`.
+- **StreetZim maps** saves regional map ZIMs to `/Library/wiki`.
+- **Routing** saves GraphHopper extracts to `/Library/maps/osm`.
+- **ZIM Library** saves Wikipedia and other Kiwix collections to `/Library/wiki`.
 - Survivor Library offers category ZIPs only. Their PDFs are extracted to
   category folders under `/Library/library`, then the ZIPs are removed.
 
@@ -94,6 +101,24 @@ Existing files are kept. Interrupted downloads can be retried, and the tool
 checks space again before downloading and extracting. New content may need a
 reader refresh or index update; follow the
 [reader instructions](../setup_library/files/containers/data_download/README.md#making-downloaded-content-visible).
+
+### Choosing ZIM collections and StreetZim maps
+
+Open **ZIM Library** for readable titles, descriptions, editions, and sizes.
+English is selected initially; use the language filter to change it. Search by
+title or description, use **Collection** to narrow the list, and keep **Latest
+editions only** selected to hide older releases of each variant. A `≈` before
+a size means it is an estimate; the downloader checks the exact size before transfer.
+
+**Maps (ZIM)** in the Collection filter offers Kiwix map archives. Restart the
+Library after downloading and open them through **Wiki**. These archives do
+not add layers or driving directions to **Maps → OpenStreetMap**; that viewer
+uses **OpenStreetMap tiles** and **Routing** downloads.
+
+For StreetZim's regional maps, use **StreetZim maps**, search for a region,
+check its supported features, and download it. Restart the Library, then open
+**Maps → StreetZim → Open map library**. Both types of ZIM use the same USB
+folder, but the StreetZim reader rebuilds its own catalog at startup.
 
 ### Uploading files from your device
 
@@ -117,9 +142,10 @@ free space for ZIP extraction. Existing files are kept; if an upload fails,
 earlier completed files remain saved. Follow the error message and select the
 remaining files to retry.
 
-After uploading music, the popup directs you to the music player:
+After uploading music, the popup gives the steps for **Music library (LMS)**:
 **Gear icon on the right → Scanner → Scan Now → Albums**, then refresh the
 browser for the music to show up.
+For the **iPod-style player**, use **Rescan music folder** instead.
 
 After uploading data or ebooks, a popup offers **Restart Library** or **I'll
 restart later**. It waits until uploads, downloads, and extraction finish.
@@ -131,7 +157,12 @@ power off and start the Library again.
 
 ## Using the Music player
 
-- Click **Music** on the home page. When opened through the home page, you're logged in
+Open **Music** on the home page and choose a player. Both use the same music
+files on the USB drive.
+
+### Music library (LMS)
+
+- Choose **Music library (LMS)**. When opened through the home page, you're logged in
   automatically - no username or password needed.
 - Browse by artist, album, or track, and play music right in your browser.
 
@@ -141,18 +172,33 @@ home page, it will show a login form. The credentials are pre-filled if not then
 - **Username:** `music`
 - **Password:** `music`
 
+### iPod-style player
+
+Choose **Music → iPod-style player**, or open **http://10.1.1.1:2001**. No login
+is needed. Browse **Folders**, **Songs**, or **Artists**, then select a song.
+Artist and album groupings come from folder names rather than embedded tags.
+
+Use the click wheel and center button, or navigate with the arrow keys and
+Enter. Escape goes back; Space plays or pauses. On **Now Playing**, the wheel
+adjusts volume and the center button switches to seeking. **Settings** contains
+shuffle, repeat, and **Skin**: choose **Purple** (the default) or **Classic**.
+The browser remembers settings locally. Playback depends on the audio formats
+your browser supports.
+
 ### Adding music
 
 Use **Downloads → Upload files → Music files**, or copy music into the USB
 drive's `music` folder while the Library is powered off. That folder is mounted
 at `/Library/music` on the Pi.
 
-In the music player, click **Gear icon on the right → Scanner → Scan Now →
+In **Music library (LMS)**, click **Gear icon on the right → Scanner → Scan Now →
 Albums**, then refresh the browser for the music to show up.
+In the **iPod-style player**, press **Rescan music folder** to pick up new files
+without interrupting playback.
 
 ### Listening on a phone app
 
-The music service also speaks the **Subsonic API**, so mobile apps like DSub or
+The LMS music service also speaks the **Subsonic API**, so mobile apps like DSub or
 Ultrasonic can connect:
 
 - **Server URL:** `http://10.1.1.1:9099`
@@ -189,6 +235,10 @@ return it to the Library before starting up again.
 
 ## Using the Maps
 
+Open **Maps** on the home page and choose **OpenStreetMap** or **StreetZim**.
+The controls below describe OpenStreetMap; see [Using StreetZim](#using-streetzim)
+for the archive viewer.
+
 The map controls use the same dark purple theme as Data Download. Use **Hide
 controls** at the top right for an uncluttered map, and **Show controls** to bring
 the panels back. Controls start hidden on phones; when shown, they form one
@@ -196,7 +246,7 @@ scrollable column. Your browser remembers the choice. GPS tracking and routes
 continue while hidden, and you can still pan and pinch to zoom. Map attribution
 stays visible.
 
-- Click **Maps** on the home page.
+- Choose **Maps → OpenStreetMap** on the home page.
 - Use the dropdown to pick a state or region.
 - Pan and zoom the interactive map. Everything - the map tiles, fonts, and icons - is
   served from the device, so it works with no internet.
@@ -206,7 +256,7 @@ stays visible.
 
 ### Using a USB GPS
 
-Connect the GPS receiver to the **Library device**, then open Maps. A fresh position
+Connect the GPS receiver to the **Library device**, then open **Maps → OpenStreetMap**. A fresh position
 automatically updates the map with a **green pin**. The **Use GPS** button
 appears when a serial receiver candidate is detected; use it to recenter and follow
 the GPS again after panning. Manual latitude/longitude entry still works.
@@ -245,6 +295,23 @@ Open the **Layers** panel (bottom-right) to show or hide groups of map features 
 **Labels, Roads, Water, Buildings, Land, Boundaries,** and **Points of interest**. This is
 handy for decluttering the map or focusing on roads for navigation. The panel updates
 automatically when you switch to a different state.
+
+### Using StreetZim
+
+Choose **Maps → StreetZim**, then **Open map library** and a downloaded archive.
+If the library is empty, get a region from **Downloads → StreetZim maps** and
+restart the Library. Search and navigation features depend on the archive and
+run in your browser using its stored data; they do not need the separate
+GraphHopper routing download.
+
+With a USB GPS connected to the Library, compatible StreetZim maps use that
+receiver for location. The status badge opens GPS diagnostics. Everyone sees
+the Library's position, rather than their phone's location. A lost or stale fix
+is reported as unavailable; an old marker may remain on the map.
+
+On updated installations, StreetZim supplies GPS to both map viewers. Stopping
+OpenStreetMap leaves the GPS feed running; stopping StreetZim interrupts GPS
+in both viewers until it restarts. Map browsing still works without a GPS fix.
 
 ---
 
@@ -436,9 +503,12 @@ No. The whole point of the Library is that it works completely offline.
 **Do I need to install an app?**
 No. Everything runs in your web browser.
 
-**Why don't I see Music (or Wiki, or Maps)?**
-The home page only lists services that are installed and running on that device. If a
-service's content wasn't loaded, its link won't appear.
+**Why is a service missing or marked Not running?**
+The home page checks services when it is generated. Music and Maps keep their
+choices visible and label unavailable ones **Not running**; other unavailable
+services may have no link. Some services need content before they start.
+StreetZim and the iPod-style player can start with empty content folders when
+their images are installed. Ask the operator to check startup and content setup.
 
 **I connected to WiFi but `http://library` won't load.**
 Try `http://10.1.1.1` directly. If your phone warns that the network "has no internet,"

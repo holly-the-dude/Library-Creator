@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>StreetZim · Library maps</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/dashboard.js" defer></script>
+</head>
+<body>
+  <main>
+    <p class="eyebrow">THE LIBRARY / OFFLINE EXPLORING</p>
+    <h1>StreetZim</h1>
+    <p class="intro">Your places, roads and routes. Ready when the internet isn’t.</p>
+    <a class="button" href="/maps/">Open map library <span aria-hidden="true">↗</span></a>
+    <section aria-labelledby="maps-title">
+      <h2 id="maps-title">Maps on this Library</h2>
+      <p id="archive-status">Checking your maps…</p>
+      <ul id="archives"></ul>
+      <p class="muted">Search and routing depend on the features included in each map archive.</p>
+    </section>
+    <section aria-labelledby="gps-title">
+      <div class="section-heading"><h2 id="gps-title">Library GPS</h2><span id="gps-state">Checking…</span></div>
+      <p>The map follows the USB receiver attached to your Library. Everyone connected sees the Library’s position.</p>
+      <p id="gps-message" role="status">Connecting to the receiver…</p>
+      <dl>
+        <dt>Coordinates</dt><dd id="coordinates">—</dd>
+        <dt>Satellites used</dt><dd id="satellites">—</dd>
+        <dt>Fix age</dt><dd id="fix-age">—</dd>
+        <dt>GPS connection</dt><dd id="gps-source">—</dd>
+      </dl>
+    </section>
+    <footer>StreetZim viewer · Map data © OpenStreetMap contributors.<br>Additional data credits are available inside each map.</footer>
+  </main>
+</body>
+</html>

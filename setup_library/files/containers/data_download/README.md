@@ -27,7 +27,7 @@ The Python modules also include function and class docstrings for IDE help.
 On startup it first checks the Pi's internet connection. While offline, the
 main page displays **"No Internet, its really hard to go on like this"** and
 the container retries every **30 seconds**. Once connected, it automatically
-discovers all four sources independently in the background. Drive capacity is
+discovers all five sources independently in the background. Drive capacity is
 reported even while offline, and local uploads remain available. It downloads content only when you
 select files and press **Download selected**.
 
@@ -41,13 +41,56 @@ while offline; the local webpage and **Upload files** remain accessible.
 | --- | --- | --- |
 | [Project N.O.M.A.D. Maps](https://github.com/Pendia/Project-N.O.M.A.D-Maps) | Regional `.pmtiles` files, resolving Git LFS pointers | `/Library/maps/pmtiles/<filename>.pmtiles` |
 | [Geofabrik US regions](https://download.geofabrik.de/north-america/us.html) | Current regional `.osm.pbf` routing extracts with exact sizes and MD5 checksums | `/Library/maps/osm/<region>-latest.osm.pbf` |
-| [Wikipedia ZIM directory](https://dumps.wikimedia.org/kiwix/zim/wikipedia/) | `.zim` files; search by language and filter latest editions | `/Library/wiki/<filename>.zim` |
+| [Kiwix ZIM Library](https://library.kiwix.org/) | Offline websites, books, videos, encyclopedias, and maps; readable descriptions, language and collection filters | `/Library/wiki/<filename>.zim` |
+| [StreetZim maps](https://streetzim.web.app/) | Regional OpenStreetMap ZIM archives with search/navigation; downloads hosted by Internet Archive | `/Library/wiki/<filename>.zim` |
 | [Survivor Library](https://www.survivorlibrary.com/index.php/main-category-index/) | Only category ZIP links, discovered by visiting each section | `/Library/library/<ZIP-name>/<PDF paths from archive>` |
 
 For example, `Accounting.ZIP` extracts its PDFs beneath
 `/Library/library/Accounting/`. Other file types inside a ZIP are skipped. The
 downloaded ZIP is removed after successful extraction. Existing destination
 files or category folders are kept and shown as **Already present**.
+
+## Browse the ZIM Library
+
+Open **ZIM Library** in Downloads to browse the Kiwix catalog used by IIAB.
+English is selected initially; choose **All languages** or another language to
+see more. Search titles, descriptions, language names, and filenames. Use the
+**Collection** selector to narrow the list to Wikipedia, books, travel guides,
+video collections, **Maps (ZIM)**, and other available collections. Titles and
+descriptions come from Kiwix and retain their original language.
+
+Each entry shows its description, language, collection, edition, date, and
+size. A `≈` marks an approximate catalog size; Kiwix may round it to KiB.
+Before transferring a selected ZIM, the downloader reads its exact byte size
+and SHA-256 from Kiwix's Metalink metadata. Edition labels explain full articles with pictures, articles without
+pictures, and short introductory articles. Expand **File details** for the
+filename and save path. **Latest editions only** keeps the newest dated file
+for each filename variant; pictures/no-pictures editions remain separate.
+
+For map archives, select **Maps (ZIM)** and search for a country or region.
+These ZIMs save to `/Library/wiki` and open through the existing **Wikipedia /
+Kiwix** reader after restarting the Library. They do not populate the dedicated
+Maps app or provide its driving directions. Continue using **OpenStreetMap tiles** for PMTiles
+map layers and **Routing** for GraphHopper data. Availability comes from the
+live catalog; a region is offered only when Kiwix publishes it.
+
+For StreetZim's regional maps, use the separate **StreetZim maps** tab. Search
+by region, read its description and supported features, then choose
+**Download selected**. Catalog sizes marked `≈` are estimates; before transfer,
+the downloader obtains the exact byte length and MD5 from Internet Archive.
+It verifies the ZIM signature, length and MD5 before publishing to
+`/Library/wiki`. Resume, cancellation and existing-file protection work as for
+the other sources. No map archive is fetched just by browsing the catalog.
+
+After a completed download, restart `street_zim` (`sudo podman restart street_zim`)
+or restart the Library, then open **Maps → StreetZim → Open map library**.
+StreetZim rebuilds its private archive catalog at startup. Its USB GPS feed is
+also shared with **Maps → OpenStreetMap** by the updated boot playbook.
+
+Catalog discovery fetches metadata in bounded pages, never the archives.
+If a refresh fails, cached entries remain available with a source error.
+Existing downloads are kept. Rebuild the `data_download` image and recreate
+its container to install this change, then select **Refresh sources**.
 
 ## Source acknowledgments and availability
 
@@ -182,8 +225,9 @@ and a gold marker on the left.
 1. Give the **Pi** internet access, then open `http://<pi-ip>:4826`.
 2. Check the drive capacity and free space. Each source reports its own status;
    Survivor Library takes longer because every category page must be checked.
-3. Pick Maps, Routing, Wikipedia, or Survivor Library. Search and select files (up to
-   100 per request). Wikipedia initially shows the latest date for each variant;
+3. Pick **OpenStreetMap tiles**, **StreetZim maps**, **Routing**, **ZIM Library**,
+   or **Survivor Library**. Search and select files (up to 100 per request).
+   ZIM Library initially shows English collections and the latest date for each variant;
    uncheck **Latest editions only** to see older snapshots.
 4. Press **Download selected**. The queue shows download and extraction progress,
    errors, cancellation, and retry controls. Closing the browser is fine.
@@ -207,7 +251,7 @@ Library LAN, as other clients on that LAN can manage this shared queue.
 
 ### Upload your own files
 
-Select **Upload files** beside Maps, Routing, Wikipedia, and Survivor Library.
+Select **Upload files** in the source tabs.
 Choose a destination, then select one file, multiple files, or a folder:
 
 | Choice | Destination |
@@ -236,9 +280,10 @@ of the largest file while publishing, plus the normal reserve. A hard shutdown
 can leave partial content or `.data_download/uploads/upload-*` staging folders.
 Automatic restart is blocked while an upload is running.
 
-After music uploads, a popup explains how to make the files appear in the music
-player: **Gear icon on the right → Scanner → Scan Now → Albums**, then refresh
-the browser. After data or ebook uploads, the page offers **Restart Library** or
+After music uploads, a popup explains how to make the files appear in **Music
+library (LMS)**: **Gear icon on the right → Scanner → Scan Now → Albums**, then
+refresh the browser. For **Music → iPod-style player**, use **Rescan music folder**.
+After data or ebook uploads, the page offers **Restart Library** or
 **I'll restart later**, once uploads and downloads have finished. If a batch
 stops with an error after saving some files, the reminder still applies to those
 saved files; a batch with no successful uploads does not show a reminder.
@@ -274,8 +319,9 @@ are tracked in the repository's [TODO.md](../../../../TODO.md).
 - Routing downloads check the OSM PBF header, byte count, and upstream MD5. A
   local SHA-256 receipt is saved and checked again before startup activation.
   MD5 detects transfer mismatches; it is not a signature or full OSM semantic validation.
-- Map downloads check the LFS SHA-256, byte count, and PMTiles header. ZIM downloads
-  check the listed byte count and ZIM header (not a full ZIM checksum). PDFs are
+- Map downloads check the LFS SHA-256, byte count, and PMTiles header. Kiwix ZIM downloads
+  check the exact Metalink byte count, SHA-256, and ZIM header. Legacy ZIM URLs
+  outside Kiwix's download hosts retain their size/header checks. PDFs are
   checked against the ZIP CRC while extracting. ZIP paths, symlinks, duplicates,
   and directory traversal are checked before extraction.
 - Work files live in `/Library/.data_download/`. Completed files/categories are
@@ -296,7 +342,7 @@ are tracked in the repository's [TODO.md](../../../../TODO.md).
 
 The downloader saves content; existing readers may need their own refresh:
 
-- **Maps:** reload the existing viewer page to rescan its PMTiles directory.
+- **Maps → OpenStreetMap:** reload the existing viewer page to rescan its PMTiles directory.
   Current `library_maps` images bundle the standard fonts and sprites and copy
   missing files onto the maps volume at startup; this downloader saves PMTiles
   only. Rebuild/recreate older viewer containers to get
@@ -305,6 +351,9 @@ The downloader saves content; existing readers may need their own refresh:
   not directly under `/Library/maps/`. A map can appear in the dropdown while
   its required assets return 404. See the
   [blank-map repair instructions](../library_maps/README.md#map-appears-in-the-dropdown-but-the-display-is-blank).
+- **Maps → StreetZim:** restart the Library or run `sudo podman restart street_zim`
+  to rebuild its private catalog, then choose **Open map library**. This also
+  briefly interrupts the shared GPS feed on integrated installations.
 - **Wiki:** register new ZIM files using the existing Wiki workflow, for example
   `sudo podman exec wiki kiwix-manage /wiki/wiki.xml add /wiki/<downloaded-file>.zim`,
   then restart `wiki` to reload its index. See [Wiki README](../wiki/README.md).

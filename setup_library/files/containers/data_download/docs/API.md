@@ -32,7 +32,7 @@ internet availability, a mounted drive, or successful downloads.
 | --- | --- |
 | `internet` | `status` (`checking`, `offline`, `online`) and `message` |
 | `storage` | Capacity fields when ready, otherwise a readiness error |
-| `sources` | Object keyed by `maps`, `routing`, `wiki`, and `survivor` |
+| `sources` | Object keyed by `maps`, `routing`, `wiki`, `streetzim`, and `survivor` |
 | `refreshing` | Whether a catalog scan is active |
 | `jobs` | List of this process's job records |
 | `token` | Per-process request token needed for POST actions |
@@ -71,19 +71,39 @@ Each row contains these fields:
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | string | Stable 24-character hexadecimal ID derived from source and URL |
-| `source` | string | `maps`, `routing`, `wiki`, or `survivor` |
+| `source` | string | `maps`, `routing`, `wiki`, `streetzim`, or `survivor` |
 | `url` | string | Remote content URL resolved during discovery |
 | `filename` | string | Decoded, validated filename from the URL |
-| `title` | string | Display filename or category title |
-| `size` | integer or null | Exact advertised bytes when known; null is not zero |
-| `sha256` | string or null | Optional source checksum, used for LFS maps |
+| `title` | string | Readable catalog title, filename, or category title |
+| `size` | integer or null | Advertised bytes; approximate when `size_is_approximate` is true; null is not zero |
+| `sha256` | string or null | Optional source checksum, used for LFS maps; Kiwix ZIM checksum is resolved on the queued copy before transfer |
+| `size_is_approximate` | boolean, optional | True for rounded Kiwix OPDS or StreetZim catalog sizes |
 | `destination` | string | Path relative to `LIBRARY_ROOT` |
 | `installed` | boolean | Added to catalog responses when the destination exists |
+
+Newly discovered `wiki` rows also include `description` (string), `languages`
+(array of language codes), `category` (collection key, including `maps`), `date`
+(ISO date string), `flavour` (edition code), and `tags` (string array). Older
+cached rows may omit these fields. `wiki` now covers the full Kiwix ZIM catalog,
+including map ZIMs; all still save under `wiki/` and use ZIM verification.
+Language, collection, and text filters run in the browser; the API returns all
+languages. Kiwix acquisition lengths are expressed in bytes but may be rounded
+to KiB. Before transfer/resume, the worker resolves the selected ZIM's exact
+size and SHA-256 from its `.meta4` metadata. The job total then uses exact bytes;
+the catalog keeps its advertised estimate. Older cached Kiwix rows without the
+approximation flag also get this resolution before downloading.
+
+`streetzim` rows include `description`, `features`, `date`, and `category: "maps"`.
+Their destination is `wiki/<filename>.zim`. Catalog sizes are approximate;
+before transfer the worker resolves exact size and `md5` from Internet Archive's
+metadata for the selected file. It verifies the ZIM signature, size and MD5 and
+records a locally computed SHA-256. StreetZim has its own catalog tab and does
+not use the Kiwix language or latest-edition filters.
 
 Survivor destinations are category directories such as `library/Accounting`.
 Installed means a path exists; it does not verify existing content or compare
 it against a remote version. Rows are sorted by source and lowercase title.
-Wikipedia's latest-edition filtering happens in the browser; the API retains
+ZIM latest-edition filtering happens in the browser; the API retains
 all discovered editions.
 
 ## Mutating requests

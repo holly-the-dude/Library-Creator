@@ -7,6 +7,6 @@ setup_library/files/**/usb[0-9]*
 *.swp
 .DS_Store
 __pycache__
-
+dotssh.tar 
 # Generated Rasbase archive - too large for GitHub
 setup_library/files/containers/rasbase_parts/rasbase.tar

@@ -1,0 +1,20 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101e24; color: #e8f0ed; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(ellipse at top right, #20443a 0, transparent 55%); min-height: 100vh; }
+main { max-width: 780px; padding: 64px 24px 32px; margin: auto; }
+.eyebrow { color: #a3cdbb; letter-spacing: .14em; font-size: 12px; }
+h1 { font-size: clamp(48px, 10vw, 76px); letter-spacing: -.06em; margin: 16px 0 8px; }
+.intro { color: #b8cbc8; font-size: 20px; max-width: 460px; line-height: 1.6; }
+.button { display: inline-flex; gap: 36px; align-items: center; padding: 16px 22px; margin: 16px 0 24px; border-radius: 10px; background: #bdf1c7; color: #173727; font-weight: 700; text-decoration: none; }
+a:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+section { margin-top: 20px; padding: 26px; border: 1px solid #37514e; border-radius: 14px; background: #182b2ee6; line-height: 1.65; }
+h2 { font-size: 19px; margin: 0; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+#gps-state { font-size: 13px; color: #ead6a2; }
+#gps-state[data-live="true"] { color: #bdf1c7; }
+dl { display: grid; grid-template-columns: 145px 1fr; gap: 10px; font-size: 14px; }
+dt { color: #a8bfbb; } dd { margin: 0; overflow-wrap: anywhere; }
+.muted, footer { color: #9cb5b0; font-size: 13px; }
+footer { margin: 32px 0; line-height: 1.8; }
+ul { padding-left: 20px; overflow-wrap: anywhere; }
+@media(max-width: 480px) { main { padding-top: 36px; } section { padding: 20px; } dl { grid-template-columns: 1fr; gap: 4px; } dd { margin-bottom: 10px; } }

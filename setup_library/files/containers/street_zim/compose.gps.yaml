@@ -1,0 +1,10 @@
+# Direct USB mode only when another service is NOT reading this receiver.
+# GPS_DEVICE must be the receiver's persistent /dev/serial/by-id/... path.
+services:
+  street_zim:
+    environment:
+      GPS_MODE: serial
+      GPS_PORT: /dev/streetzim-gps
+      GPS_BAUD: "${GPS_BAUD:-9600}"
+    devices:
+      - "${GPS_DEVICE:?Set GPS_DEVICE to your receiver path}:/dev/streetzim-gps"

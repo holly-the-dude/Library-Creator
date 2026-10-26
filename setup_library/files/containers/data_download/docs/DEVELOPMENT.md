@@ -12,7 +12,7 @@ the [testing guide](TESTING.md) covers automated and Raspberry Pi checks.
 | [app.py](../app.py) | HTTP server, connectivity lifecycle, storage checks, queue, downloads, validation, and extraction | Container entrypoint: `python3 /opt/data_download/app.py` |
 | [uploads.py](../uploads.py) | Bounded upload streaming, fixed destinations, ZIP validation, staging, and publication | Imported by `app.py`; called by upload request threads |
 | [routing.py](../routing.py) | Verified routing receipts, pending selection, atomic activation after GraphHopper stops | Imported by `app.py`; boot CLI: `python3 /opt/data_download/routing.py` |
-| [sources.py](../sources.py) | HTTPS connectivity probes and catalog discovery for four sources | Imported by `app.py`; no standalone command |
+| [sources.py](../sources.py) | HTTPS connectivity probes and catalog discovery for five sources | Imported by `app.py`; no standalone command |
 | [tests/test_downloader.py](../tests/test_downloader.py) | Offline regression tests and loopback HTTP tests | `python3 -m unittest discover -s tests -v` |
 | [static/app.js](../static/app.js) | Browser state polling, search, selection, and job controls | Loaded by the served page |
 | [static/index.html](../static/index.html), [static/style.css](../static/style.css) | Page structure and Library website colors | Served as fixed local assets |
@@ -37,14 +37,14 @@ flowchart TD
     Offline --> Wait[Wait until next 30-second check]
     Wait --> Check
     Check -->|First connection| Init[Check storage and load cached catalog]
-    Init --> Scan[Discover all four sources]
+    Init --> Scan[Discover all five sources]
     Check -->|Connection restored| Scan
     Scan --> Ready[User selects downloads]
     Ready --> Queue[Single download worker]
 ```
 
-`sources.internet_available()` sends HTTPS HEAD requests to GitHub, Wikimedia
-dumps, Survivor Library, then Geofabrik, stopping at the first reachable host. Each request
+`sources.internet_available()` sends HTTPS HEAD requests to GitHub, Kiwix,
+Survivor Library, Geofabrik, then StreetZim, stopping at the first reachable host. Each request
 uses a five-second timeout. An HTTP error such as 429 or 503 still establishes
 connectivity. DNS, connection, and TLS failures do not. Responses redirected to
 another hostname are not accepted as evidence of connectivity.
@@ -89,7 +89,7 @@ can remain for later retry, and interrupted extraction can leave a staging folde
 
 ## Source discovery in sources.py
 
-`discover(source, publish)` accepts `maps`, `routing`, `wiki`, or `survivor`. Its callback
+`discover(source, publish)` accepts `maps`, `routing`, `wiki`, `streetzim`, or `survivor`. Its callback
 receives lists of normalized catalog dictionaries. It returns an empty string
 on success or a warning for child-listing failures. Initial network/listing
 failures propagate to the application, which records a source error.
@@ -98,12 +98,40 @@ failures propagate to the application, which records a source error.
 | --- | --- | --- |
 | Maps | GitHub contents API for the configured repository's `pmtiles` directory | Entries below 1 KiB are resolved as LFS pointers; their actual size and SHA-256 accompany a GitHub media download URL |
 | Routing | Parse current US regional Geofabrik PBF links; HEAD each file and fetch its MD5 sidecar | Exact Content-Length and MD5; a local SHA-256 receipt is saved after verification |
-| Wikipedia | Parse ZIM links from the configured directory listing | Parse exact trailing byte counts; missing/unrecognized sizes become `None` |
+| Kiwix ZIM Library | Parse OPDS v2 in 500-entry pages, using totalResults/startIndex | Advertised byte length (possibly rounded to KiB); titles, descriptions, languages, collection, date, flavour, and tags |
+| StreetZim | Parse regional cards at streetzim.web.app; accept direct HTTPS archive.org ZIM links | Approximate catalog size; exact size and MD5 resolved from Internet Archive metadata before transfer |
 | Survivor Library | Find same-site `library-*` category pages, then their ZIP links | Sizes remain `None` until transfer; rounded MB labels are not treated as exact byte counts |
+
+`StreetZimCards` preserves titles, descriptions, dates and feature labels.
+`resolve_streetzim_metadata()` requires a matching filename, positive exact byte
+length and valid MD5. StreetZim uses the existing transfer/resume pipeline and
+saves to `wiki/`; verification checks the ZIM signature, size and upstream MD5
+before publication. Adding map archives requires restarting StreetZim to rebuild
+its private catalog. Discovery never downloads archive bodies.
 
 `Links` deliberately captures text following an anchor until the next anchor,
 including timestamps and sizes outside `</a>`. It tolerates the malformed,
 unquoted ZIP anchors found in category pages. It is not a general HTML DOM parser.
+
+ZIM discovery uses the same Kiwix OPDS v2 catalog as IIAB's Admin Console.
+`parse_zim_catalog()` accepts HTTPS acquisition links on Kiwix download hosts,
+strips `.meta4` to request the actual archive, and rejects unsafe filenames or
+invalid byte lengths. Collection falls back to the download directory when
+metadata is empty, including `maps`. Pages advance by actual entry count and
+are capped at 100; failures preserve cached rows through the existing refresh
+logic. The internal `wiki` source and destination stay compatible with existing
+queues, caches, ZIM verification, and reader startup. `parse_wiki()` remains a
+legacy directory parser; live discovery now uses OPDS.
+
+OPDS lengths must not be used as exact transfer lengths: the US map's catalog
+reported 16,601,606,144 bytes while the actual file contained 16,601,605,855.
+`resolve_zim_metadata()` fetches the queued file's `.meta4` with the standard
+metadata limit before transfer/resume. It requires a matching filename, positive
+exact size, and SHA-256, then updates the worker's copy of the row. Cached Kiwix
+URLs are recognized even without the new `size_is_approximate` flag. Mirror
+URLs in the Metalink are not followed; the existing Kiwix download URL remains
+the transfer URL. Strict HTTP length, resume validator, and checksum checks
+still apply. Metadata failures stop the download before writing archive bytes.
 
 `fetch()` limits metadata to 8 MiB by default. LFS pointer reads use a 2 KiB limit.
 `open_url()` requests identity encoding and a 30-second timeout. No PMTiles, ZIM,
@@ -133,7 +161,8 @@ The worker moves through these stages:
 1. **Queued:** validate catalog IDs, connectivity, and destination existence.
 2. **Downloading:** stream into a `.part` file under `.data_download`.
 3. **Verifying:** check known length and file signature; hash maps when a source
-   SHA-256 is available. ZIM validation is a header/size check, not a full ZIM audit.
+   SHA-256 is available and Kiwix ZIMs against their Metalink SHA-256. Legacy ZIM
+   URLs outside Kiwix's download hosts retain header/size checks.
 4. **Extracting (Survivor only):** validate ZIP paths, entry count, duplicate PDF
    paths, and expanded PDF sizes. Extract only `.pdf` members, reading each to EOF
    to check its ZIP CRC. PDF contents are not separately parsed or authenticated.

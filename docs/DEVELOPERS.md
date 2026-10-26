@@ -71,14 +71,23 @@ for discovery, port mapping and deployment.
   (SSID `library`, open, channel 7) plus `dnsmasq` for DHCP (`10.1.1.10–10.1.1.100`) and
   DNS (`library` / `library.local` → `10.1.1.1`).
 - The **webserver** is the hub: nginx on port 80 plus `library.py`, which probes each
-  service and shows nav links only for the ones that respond.
+  service. **Music** groups LMS and the iPod-style player; **Maps** groups
+  OpenStreetMap and StreetZim. Unavailable choices remain visible as **Not running**.
+  Other service links appear only when their probes succeed. Checks require HTTP
+  200 and the configured `check_text`, using `check_path` when provided.
 - Content services each run on a static IP in `10.88.0.0/24` and are reached by clients
   through the mapped host ports.
-- The **maps** service is two containers: the `library_maps` web viewer (PMTiles + MapLibre,
+- The **OpenStreetMap** service uses the `library_maps` web viewer (PMTiles + MapLibre,
   port 8080) and an optional **`graphhopper`** routing engine (`10.88.0.213:8989`). The
   viewer proxies `/api/route` to GraphHopper, so the browser only ever talks to the maps
   web container. Address search is done in-browser against the loaded tiles and routing
   takes lat/lon or map-click points — there is **no geocoder/Photon service**.
+- **StreetZim** is a separate archive viewer sharing `/Library/wiki` read-only
+  with Kiwix. It builds a private catalog and supplies the shared USB GPS feed
+  at normal Library startup. Its archive-based navigation does not use GraphHopper.
+- **Music** offers LMS through the hub's `/music` proxy and a separate
+  `music_player` container. Both mount `/Library/music` read-only; the iPod-style
+  player scans folders without an LMS database and serves audio directly to browsers.
 
 ### Service / port reference
 
@@ -86,13 +95,15 @@ for discovery, port mapping and deployment.
 |---------|-------------|---------------|------------|
 | Webserver hub | 10.88.0.201 | 80 | `http://10.1.1.1` / `http://library` |
 | Wiki (Kiwix) | 10.88.0.200 | 6902 | `http://10.1.1.1:6902` |
-| Music (LMS) | 10.88.0.210 | 5082 | `http://10.1.1.1:9099` |
+| Music (LMS) | 10.88.0.210 | 5082 | `http://library/music` (automatic login), or `http://10.1.1.1:9099` |
+| iPod-style player (optional image) | 10.88.0.217 | 8080 | `http://10.1.1.1:2001` |
 | eBooks (Calibre-Web) | 10.88.0.211 | 8083 | `http://10.1.1.1:8083` |
 | Maps (PMTiles + MapLibre) | 10.88.0.212 | 8080 | `http://10.1.1.1:8080` |
 | Maps routing (GraphHopper) | 10.88.0.213 | 8989 | internal, via maps `/api/route` |
 | Meshtastic bridge | 10.88.0.214 | 8086 | `http://library:8086` |
 | meshflash setup (alternative to bridge) | 10.88.0.214 | 8086 | `http://library:8086` |
 | Data Download (optional image) | 10.88.0.215 | 4286 | `http://10.1.1.1:4826` |
+| StreetZim (optional image) | 10.88.0.216 | 8093 | `http://10.1.1.1:8093` |
 | Shutdown endpoint | — | 9999 | internal |
 
 ---
@@ -127,6 +138,9 @@ Library-Creator/
             ├── webserver/           # nginx hub + library.py service monitor
             ├── wiki/                # Kiwix server
             ├── music/               # LMS music server
+            ├── music_player/        # iPod-style player, Purple/Classic skins
+            ├── street_zim/          # Shared ZIM reader + USB GPS feed
+            ├── data_download/       # Content downloads + local uploads
             ├── calibre-web/         # Calibre-Web e-book reader
             ├── meshtastic/          # USB protocol discovery, HTTP bridge; no firmware flashing
             ├── meshflash/           # Offline firmware TUI via ttyd + persistent tmux
@@ -161,7 +175,8 @@ own Containerfile. The older **rasbase** archive is stored as split parts under
   flattens the layers into one to reclaim space and verifies the resulting codename.
   It's safe to run repeatedly.
 
-The hotspot, webserver, wiki, calibre-web, maps, Meshtastic and meshflash images
+The hotspot, webserver, wiki, calibre-web, maps, StreetZim, music_player,
+data_download, Meshtastic and meshflash images
 use `rasbase_master` by default. Their `BASE_IMAGE` build argument can select a
 compatible alternative; check each Containerfile and service README.
 
@@ -184,6 +199,11 @@ containers by scanning for subdirectories that contain a `Containerfile` (or `Do
    removing images. Each is built once, using its explicit Containerfile path.
    Build failures are summarized and return a nonzero exit status.
 
+   Discovery also includes `street_zim`, `music_player`, and `data_download`.
+   Builds use `podman build --format docker` to preserve Containerfile
+   `HEALTHCHECK` instructions; this selects an image format and does not require
+   the Docker runtime.
+
    The script uses `podman rmi --force` before rebuilding. Run it during maintenance,
    never during a radio flash. Use the same rootful Podman image store for building,
    exporting, loading and appliance startup.
@@ -198,7 +218,8 @@ containers by scanning for subdirectories that contain a `Containerfile` (or `Do
    sudo ./create_tar_pods.sh
    ```
 
-The export loop includes `meshtastic.tar` and `meshflash.tar`. Nested GraphHopper
+The export loop includes `meshtastic.tar`, `meshflash.tar`, `street_zim.tar`,
+`music_player.tar`, and `data_download.tar`. Nested GraphHopper
 images are built by `build_pods.sh`, but are not exported by that loop; save
 `localhost/library_maps-graphhopper:11` separately when packaging routing.
 Meshflash firmware is part of its image, so exporting preserves its offline snapshot.
@@ -208,7 +229,7 @@ place). To build a single container by hand:
 
 ```bash
 cd setup_library/files/containers/webserver
-sudo podman build -t localhost/webserver:latest -f Containerfile .
+sudo podman build --format docker -t localhost/webserver:latest -f Containerfile .
 ```
 
 ---
@@ -223,7 +244,7 @@ automatically within 5 minutes of boot. Progress is tracked with flag files in `
 | Stage | Key actions | Driven by |
 |-------|-------------|-----------|
 | **First Boot** | Format USB as `Library_USB` (exFAT, GPT), unpack base content, `apt` install (Python, Ansible, Podman, display drivers), build containers (`reconstitute.sh` → `update_rasbase.sh` → `build_pods.sh`), configure display (TFT via LCD-show, or HDMI via KMS), set WiFi country, install resume cron | `bootstrap` `do_first_boot` |
-| **Second Boot** | Show "configuring" splash, run `01_install_ansible.yml` (SSH keys, Podman network, systemd services, display splash services, WiFi, touch input, load container images), verify `shutdown_library.service` | `01_install_ansible.yml` |
+| **Second Boot** | Show "configuring" splash, run `01_install_ansible.yml` (Podman network, systemd services, display splash services, WiFi, touch input, load container images), verify `shutdown_library.service` | `01_install_ansible.yml` |
 | **Third Boot** | Remove resume cron, show "ready" splash, clean up temporary network config, final reboot into production | `bootstrap` `do_third_boot` |
 
 At runtime, `start_library.service` runs `/root/start_library.yml`, copied from
@@ -257,13 +278,16 @@ driver (auto-scaling from the monitor's EDID, with an optional forced mode via
 
 ## Content layout on the USB (`/Library`)
 
-Content services activate when their content is present. Radio service selection
-runs independently of content folders. Expected paths:
+Most content services activate when their content is present. StreetZim and
+the iPod-style player start when their optional images are installed, even with
+empty content folders; StreetZim can therefore supply GPS before maps are loaded.
+Radio service selection runs independently of content folders. Expected paths:
 
 | Path | Used by | Notes |
 |------|---------|-------|
 | `/Library/wiki/wiki.xml` (+ `.zim` files) | Wiki | Kiwix library; `getwiki.sh` fetches content |
-| `/Library/music/` | Music | Audio files (mounted read-only in the container) |
+| `/Library/wiki/*.zim` | Wiki + StreetZim | Shared complete archives; StreetZim mounts the folder read-only at `/data` and builds its own catalog without changing `wiki.xml` |
+| `/Library/music/` | LMS + iPod-style player | Shared audio files, mounted read-only; the iPod-style player uses `/music` |
 | `/Library/.music_data/` | Music | LMS database; seeded from `music_default_data.tar` |
 | `/Library/calibre/books/` | eBooks | Calibre library with `metadata.db` |
 | `/Library/calibre/put_new_books_here/` | eBooks | Drop zone for `calibredb add` |
@@ -274,8 +298,18 @@ runs independently of content folders. Expected paths:
 | `/Library/maps/graph-cache/` | Maps routing | GraphHopper's built routing graph (rebuilt when the extract changes) |
 | `/Library/meshtastic/` | Meshtastic bridge | Private configuration backup, chosen node name and discovered node snapshot |
 
-If required content is missing, the relevant runtime startup block skips that
-content service. Missing radio firmware instead leads to the meshflash setup page.
+Content-gated services are skipped when their required content is missing.
+Missing radio firmware instead leads to the meshflash setup page.
+
+### Music player startup
+
+The playbook checks for `localhost/music_player:latest`, then starts
+`music_player` at `10.88.0.217` with `2001:8080`, a read-only root filesystem,
+and `/Library/music:/music:ro`. The image runs as UID/GID 1000, which must be
+able to read the files and traverse their directories. Startup waits for the
+page title; on failure it stops that container, reports the error, and continues.
+LMS has its own startup and database. Rescanning one player does not rescan the other.
+See the [music player guide](../setup_library/files/containers/music_player/README.md).
 
 ### Maps routing internals
 
@@ -303,11 +337,24 @@ The maps service is started by the runtime `start_library.yml` MAPS block:
 
 ### Maps GPS internals
 
-The maps image includes `read_gps.py` and a `gps_service.py` wrapper that reads one
-serial NMEA receiver in a background thread. The same checksum-validated parser remains
-usable from the command line. nginx proxies `/api/gps` to `127.0.0.1:8765`; GPS state
-is kept in memory and responses are never cached. Every map client sees the GPS on
-the Library appliance, including browsers using its plain HTTP hotspot.
+The runtime playbook starts `street_zim` before `library_maps` when its image is
+installed and `street_zim_enabled` is true (the default). It stops the old Maps
+reader first, gives StreetZim `/dev` access with `GPS_MODE=serial`, and waits for
+`http://127.0.0.1:8093/health` to report `ready`. Neither a GPS fix nor a map archive
+is required. Optional `gps_port` and `gps_baud` select a receiver and baud rate;
+defaults are automatic detection and 9600.
+
+OpenStreetMap then starts with `GPS_UPSTREAM=http://10.88.0.216:8093` and no USB
+device access. Its `configure_gps.py` configures nginx to relay `/api/gps` to
+StreetZim and the entrypoint skips its local reader. GPS state stays in memory
+and responses are not cached. Both viewers show the Library's position, including
+over the plain HTTP hotspot.
+
+If StreetZim is disabled, absent, or fails startup, the playbook stops it before
+falling back to OpenStreetMap's local `gps_service.py` / `read_gps.py` reader.
+That mode uses a privileged maps container, a host `/dev` bind mount for hotplug,
+and nginx proxying to `127.0.0.1:8765`. Compose device access remains opt-in
+through `compose.gps.yaml`.
 
 The viewer polls status, updates a green marker on valid fixes, and turns the last
 position red on invalid/stale fixes or connection loss. The GPS status dialog also
@@ -315,12 +362,24 @@ works before a fix and shows device discovery, satellite counts, and serial erro
 See [the maps README](../setup_library/files/containers/library_maps/README.md#usb--serial-gps)
 for controls, configuration, and troubleshooting.
 
-The runtime playbook keeps its existing privileged maps container and bind-mounts
-host `/dev` for USB discovery and hotplug. Optional `gps_port` and `gps_baud` variables
-select a receiver/baud; defaults are automatic detection and 9600. Compose device
-access is opt-in through `compose.gps.yaml`. The entrypoint supervises both nginx and
-the GPS service and forwards shutdown signals to them. No GPS is required for maps
-to start normally.
+Stopping OpenStreetMap leaves StreetZim's GPS running. If StreetZim stops after
+a successful boot, both viewers lose GPS until it restarts; fallback is decided
+at startup, not dynamically. Standalone StreetZim helper/Compose defaults instead
+relay from OpenStreetMap, so do not combine those defaults with a Maps container
+that relays back to StreetZim. Only one service should read a receiver. See the
+[StreetZim guide](../setup_library/files/containers/street_zim/README.md) for modes
+and diagnostics.
+
+### Deploying the updated menus and containers
+
+On an existing appliance, rebuild `street_zim`, `library_maps`, `music_player`,
+`webserver`, and `data_download` in the rootful Podman image store. Copy the updated
+`setup_library/files/start_library.yml` to `/root/start_library.yml`, then restart
+the Library normally to recreate services and regenerate the hub. Rebuilding
+images alone does not update running containers. Regenerate image tar files
+when distributing offline bundles. The [StreetZim integration steps](../setup_library/files/containers/street_zim/README.md#install-the-integrated-maps-menu-and-startup)
+and [music player guide](../setup_library/files/containers/music_player/README.md)
+provide the build/run commands.
 
 ### Radio service selection
 
@@ -427,9 +486,11 @@ Library card. It runs early in startup, **before** any services start.
 2. **Assign a static IP** in the `10.88.0.0/24` range and a host port.
 3. **Register it with the hub.** In the webserver's `library_setup.yml`, add a
    `containers:` entry (name, ports, ip, drive_map, command) and a `services:` entry
-   (name, display_name, internal_ip, internal_port, external_url, check_text, timeout).
-   The `check_text` is a string `library.py` looks for in the service's HTTP response to
-   decide whether to show its nav link.
+   (name, display_name, internal_ip, internal_port, external_url or external_port,
+   check_path, check_text, timeout). `library.py` requires HTTP 200 and looks for
+   `check_text` in the response at `check_path` (default `/`). Music and Maps group
+   membership and labels are defined in `library.py`; update those too when adding
+   a choice to either menu.
 4. **Start it.** Add a start block to `setup_library/files/start_library.yml`,
    gated on the content existing under `/Library`, and post status to the display.
 5. **Package it.** Run `build_pods.sh` then `create_tar_pods.sh` so the image ships as a

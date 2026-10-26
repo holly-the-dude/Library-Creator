@@ -4,6 +4,20 @@ The webserver container is the main entry point for the Library system. It runs 
 and radio selection are handled by the runtime
 [`start_library.yml`](../../start_library.yml) playbook.
 
+The **Maps** navigation button opens a chooser with **OpenStreetMap** (port
+8080) and **StreetZim** (port 8093). Available viewers open in a new tab; an
+unavailable viewer is labelled **Not running**. Links retain the hostname used
+to open the Library. Health is checked when the homepage is generated.
+StreetZim reads the same `/Library/wiki` directory as Kiwix. Its image and
+startup instructions are in the [StreetZim guide](../street_zim/README.md).
+
+The **Music** chooser offers **Music library (LMS)** through the existing
+`/music` proxy and **iPod-style player** on port 2001. Both read `/Library/music`.
+The optional `music_player` service uses `10.88.0.217:8080` internally and starts
+when its image is installed. See the [music player guide](../music_player/README.md)
+for build and startup instructions. Music and Maps use the same menu styling;
+opening one chooser closes the other in browsers supporting exclusive details.
+
 ## File Structure
 
 ```

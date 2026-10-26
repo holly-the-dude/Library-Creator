@@ -1,0 +1,23 @@
+services:
+  music_player:
+    build:
+      context: .
+      dockerfile: Containerfile
+      args:
+        BASE_IMAGE: "${BASE_IMAGE:-localhost/rasbase_master:latest}"
+    image: localhost/music_player:latest
+    container_name: music_player
+    networks:
+      library:
+        ipv4_address: "${MUSIC_IP:-10.88.0.217}"
+    ports:
+      - "${MUSIC_PORT:-2001}:8080"
+    volumes:
+      - "${MUSIC_PATH:-/Library/music}:/music:ro"
+    read_only: true
+    restart: unless-stopped
+
+networks:
+  library:
+    external: true
+    name: "${MUSIC_NETWORK:-podman}"

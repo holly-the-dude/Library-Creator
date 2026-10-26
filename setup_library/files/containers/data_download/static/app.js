@@ -9,11 +9,12 @@ let uploadRestartPending = false;
 const uploadDestinations = {music: "/Library/music", data: "/Library/library", ebooks: "/Library/calibre/put_new_books_here"};
 const remindedDownloads = new Set();
 const pageSize = 40;
-const destinations = {routing: "/Library/maps/osm", maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", survivor: "/Library/library"};
+const destinations = {routing: "/Library/maps/osm", maps: "/Library/maps/pmtiles", wiki: "/Library/wiki", streetzim: "/Library/wiki", survivor: "/Library/library"};
 const hints = {
   routing: "US regional OpenStreetMap extracts from Geofabrik. MD5 and OSM headers are checked. Download first, then choose Use after restart below. Import needs additional disk space and RAM; start with a small region.",
   maps: "Regional PMTiles files. Git LFS map checksums are verified after download.",
-  wiki: "Search a language code such as wikipedia_en_. Latest editions keeps the newest date for each variant.",
+  streetzim: "Regional OpenStreetMap archives from StreetZim, hosted on Internet Archive. Exact size and MD5 are checked before publishing. After restarting the Library, open Maps → StreetZim. Included search, routing, terrain and imagery vary by region.",
+  wiki: "Offline websites, encyclopedias, books, videos, and maps from Kiwix. ZIM files open in the Library's Wikipedia / Kiwix reader after restart. For StreetZim's regional maps, use the StreetZim maps tab.",
   survivor: "Category ZIPs only. PDFs are extracted into a category folder; the ZIP is then removed. Space is needed for both the ZIP and its PDFs."
 };
 function bytes(value) {
@@ -74,6 +75,51 @@ function renderStorage() {
   $("storage-meter").value = disk.ready ? disk.used / disk.total * 100 : 0;
   $("storage-detail").textContent = disk.ready ? `${bytes(disk.used)} used · ${bytes(disk.reserve)} kept free` : "Uploads and downloads need a writable, mounted drive.";
 }
+const languageNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], {type: "language"}) : null;
+function languageName(code) {
+  if (code === "mul") return "Multiple languages";
+  if (code === "und") return "Unspecified language";
+  try { return languageNames?.of(code) || code; } catch { return code; }
+}
+function rowLanguages(row) {
+  // Old cached Wikipedia directory rows remain searchable until refreshed.
+  return row.languages?.length ? row.languages : [row.filename.match(/^wikipedia_([a-z-]+)_/)?.[1] || "und"];
+}
+const collectionNames = {maps: "Maps (ZIM)", wikipedia: "Wikipedia", wikivoyage: "Travel guides (Wikivoyage)",
+  wiktionary: "Dictionaries (Wiktionary)", gutenberg: "Books (Project Gutenberg)", stack_exchange: "Questions & answers (Stack Exchange)",
+  videos: "Video collections", ted: "TED talks", devdocs: "Developer documentation", other: "Other collections",
+  wikibooks: "Textbooks (Wikibooks)", wikisource: "Source texts (Wikisource)", wikiquote: "Quotations (Wikiquote)",
+  wikiversity: "Learning resources (Wikiversity)", vikidia: "Children's encyclopedia (Vikidia)",
+  phet: "Science simulations (PhET)", ifixit: "Repair guides (iFixit)", libretexts: "Textbooks (LibreTexts)",
+  freecodecamp: "Coding lessons (freeCodeCamp)", mooc: "Online courses", zimit: "Archived websites"};
+function collectionName(code) {
+  return collectionNames[code] || code.replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+function rowCategory(row) { return row.category || (row.filename.startsWith("wikipedia_") ? "wikipedia" : "other"); }
+function renderZimFilters() {
+  $("zim-filters").hidden = source !== "wiki";
+  if (source !== "wiki") return;
+  const rows = state.catalog.filter(row => row.source === "wiki");
+  for (const [id, values, label, all] of [
+    ["zim-language", new Set(["eng", ...rows.flatMap(rowLanguages)]), languageName, "All languages"],
+    ["zim-category", new Set(rows.map(rowCategory)), collectionName, "All collections"]
+  ]) {
+    const select = $(id), current = select.value;
+    // Keep the current choice while progressive catalog pages are arriving.
+    if (current) values.add(current);
+    const options = [["", all], ...[...values].map(value => [value, label(value)]).sort((a, b) => a[1].localeCompare(b[1]))];
+    const signature = JSON.stringify(options);
+    if (select.dataset.options === signature) continue;
+    select.replaceChildren(...options.map(([value, text]) => {
+      const option = element("option", text); option.value = value; return option;
+    }));
+    select.value = current; select.dataset.options = signature;
+  }
+}
+function zimDetails(row) {
+  const edition = {maxi: "Full articles with pictures", nopic: "Articles without pictures", mini: "Short introductory articles"}[row.flavour] || row.flavour;
+  return [rowLanguages(row).map(languageName).join(", "), collectionName(rowCategory(row)), edition, row.date].filter(Boolean).join(" · ");
+}
 function filteredRows() {
   let rows = state.catalog.filter(row => row.source === source);
   if (source === "wiki" && $("latest").checked) {
@@ -85,7 +131,11 @@ function filteredRows() {
     rows = [...latest.values()];
   }
   const query = $("search").value.toLowerCase();
-  return rows.filter(row => (row.title + " " + row.filename).toLowerCase().includes(query)
+  return rows.filter(row => (source !== "wiki" || ((!$("zim-language").value || rowLanguages(row).some(code =>
+      code === $("zim-language").value || languageName(code) === languageName($("zim-language").value)))
+      && (!$("zim-category").value || rowCategory(row) === $("zim-category").value)))
+    && [row.title, row.filename, row.description || "", row.features || "", ...(row.tags || []),
+      ...(source === "wiki" ? [zimDetails(row)] : [])].join(" ").toLowerCase().includes(query)
     && (!$("fits").checked || (state.storage.ready && row.size != null && row.size <= state.storage.available)));
 }
 function renderFiles() {
@@ -98,6 +148,7 @@ function renderFiles() {
     $("destination").textContent = "Add files from your device to the Library USB drive";
     return;
   }
+  renderZimFilters();
   const rows = filteredRows(), pages = Math.max(1, Math.ceil(rows.length / pageSize));
   page = Math.min(page, pages - 1); visible = rows.slice(page * pageSize, (page + 1) * pageSize);
   $("files").replaceChildren();
@@ -108,10 +159,25 @@ function renderFiles() {
     check.addEventListener("change", () => { check.checked ? selected.add(row.id) : selected.delete(row.id); renderSelection(); });
     checkCell.append(check);
     const name = element("td", row.title);
+    if (row.source === "wiki") {
+      if (row.description) name.append(element("p", row.description, "zim-description"));
+      name.append(element("small", zimDetails(row)));
+      const details = element("details"), summary = element("summary", "File details");
+      details.append(summary, element("small", row.filename + " → /Library/" + row.destination));
+      if (row.tags?.includes("_sw:yes")) details.append(element("small", "This archive uses a service worker and may need a compatible Kiwix reader."));
+      name.append(details);
+    }
     if (row.source === "survivor") name.append(element("small", row.filename + " → " + row.destination));
+    if (row.source === "streetzim") {
+      if (row.description) name.append(element("p", row.description, "zim-description"));
+      name.append(element("small", [row.features, row.date].filter(Boolean).join(" · ")));
+      const details = element("details"), summary = element("summary", "File details");
+      details.append(summary, element("small", row.filename + " → /Library/" + row.destination));
+      name.append(details);
+    }
     const job = jobFor(row);
     const status = installed(row) ? "Already present" : activeStates.has(job?.status) ? job.status : row.size > state.storage.available ? "Too large" : "Ready";
-    tr.append(checkCell, name, element("td", bytes(row.size)), element("td", status));
+    tr.append(checkCell, name, element("td", (row.size_is_approximate ? "≈ " : "") + bytes(row.size)), element("td", status));
     $("files").append(tr);
   }
   if (!visible.length) {
@@ -328,7 +394,7 @@ document.querySelectorAll("[data-source]").forEach(button => button.addEventList
   document.querySelectorAll("[data-source]").forEach(tab => tab.setAttribute("aria-pressed", String(tab === button)));
   renderFiles(); renderRouting();
 }));
-for (const id of ["search", "fits", "latest"]) $(id).addEventListener("input", () => { page = 0; renderFiles(); });
+for (const id of ["search", "fits", "latest", "zim-language", "zim-category"]) $(id).addEventListener("input", () => { page = 0; renderFiles(); });
 $("previous").addEventListener("click", () => { page--; renderFiles(); });
 $("next").addEventListener("click", () => { page++; renderFiles(); });
 $("select-page").addEventListener("change", () => {

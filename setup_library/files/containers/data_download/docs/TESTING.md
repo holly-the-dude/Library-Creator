@@ -12,6 +12,7 @@ From `setup_library/files/containers/data_download`:
 ```sh
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 node --check static/app.js
+node --test tests/test_zim_ui.cjs
 ```
 
 Python tests need only the standard library. Node is optional for the JavaScript
@@ -36,6 +37,11 @@ read-only mount is required. The image working directory makes `app` and
 `sources` importable. Use the same Podman image store for build and test.
 
 ## Coverage
+
+`tests/test_streetzim.py` checks regional card metadata, unsafe URL rejection,
+empty catalog errors, exact Internet Archive metadata, and transfer verification
+against the ZIM signature and MD5. `test_zim_ui.cjs` also checks the separate
+StreetZim tab, region search, save destination and restart instructions.
 
 | Test class | Covered behavior |
 | --- | --- |
@@ -163,3 +169,20 @@ python3 -m unittest discover -s setup_library/tests -p test_routing_startup.py -
 These cover no pending request, stop-before-activation ordering, missing images,
 and activation failure recovery. Live Geofabrik discovery has also been checked
 against the US overview and Georgia's HEAD/MD5 metadata without fetching its PBF.
+
+## Kiwix ZIM catalog checks
+
+`test_zim_catalog.py` covers OPDS metadata, rounded catalog sizes, Metalink-to-ZIM
+URLs, exact Metalink size/SHA-256 resolution (including the US map regression),
+invalid metadata, map collection fallback, unsafe links, pagination, and incomplete feeds.
+`test_downloader.py` checks transfer with rounded sizes on either side of the
+actual length, missing Content-Length, resumed/completed retries, and continued
+rejection of mirror size mismatches and checksum failures.
+Run `node --test tests/test_zim_ui.cjs` for language/collection/search/edition
+filter behavior and safe metadata rendering. These checks need no network.
+
+On the Pi, refresh sources and open **ZIM Library**. Confirm English is selected,
+choose **Maps (ZIM)**, and search for a published region. Check descriptions,
+size, edition labels, and File details. Change to All languages and verify the
+list expands. Download a small ZIM, restart, and open it in Wikipedia/Kiwix.
+Confirm map ZIMs appear there while PMTiles and routing remain in their own tabs.

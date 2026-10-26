@@ -155,10 +155,15 @@ def stream_download(row, part, storage, event, progress):
 
     A sibling .json stores the URL, length, and HTTP validator for Range/If-Range
     retries. Resume requires a matching URL and ETag or Last-Modified; a full
-    200 response restarts the file. This function checks transfer lengths but
+    200 response restarts the file. ZIM metadata first replaces the worker row's
+    rounded size with exact bytes and an upstream checksum (Kiwix SHA-256 or
+    StreetZim MD5). This function checks transfer lengths but
     leaves format/checksum verification and final publication to the worker.
     Network, filesystem, ValueError, and Cancelled exceptions propagate.
     """
+    check_cancel(event)
+    sources.resolve_zim_metadata(row)
+    check_cancel(event)
     metadata = part.with_suffix(".json")
     headers = {}
     offset = 0
@@ -232,9 +237,10 @@ def stream_download(row, part, storage, event, progress):
 def verify(row, path, event):
     """Check length, format signature, and any catalog SHA-256 before publication.
 
-    ZIP recognition occurs here; PDF CRC checks happen during extraction. ZIM
-    validation checks its header/known size, not the archive's internal checksum.
-    Raise ValueError for invalid content and Cancelled during map hashing.
+    ZIP recognition occurs here; PDF CRC checks happen during extraction.
+    Kiwix ZIMs use Metalink SHA-256; StreetZim uses Internet Archive MD5.
+    Legacy ZIM URLs without metadata use header/known size.
+    Raise ValueError for invalid content and Cancelled during hashing.
     """
     if row.get("size") is not None and path.stat().st_size != row["size"]:
         raise ValueError("Downloaded file size does not match the catalog")
@@ -248,9 +254,11 @@ def verify(row, path, event):
         magic = downloaded.read(8)
         if row["source"] == "maps" and not magic.startswith(b"PMTiles"):
             raise ValueError("Source did not return a PMTiles file")
-        if row["source"] == "wiki" and not magic.startswith(b"ZIM\x04"):
+        if row["source"] in {"wiki", "streetzim"} and not magic.startswith(b"ZIM\x04"):
             raise ValueError("Source did not return a ZIM file")
-        if row["source"] == "routing":
+        if row["source"] in {"routing", "streetzim"}:
+            if not row.get("md5"):
+                raise ValueError("Download checksum metadata missing; refresh sources")
             downloaded.seek(0)
             md5, sha256 = hashlib.md5(usedforsecurity=False), hashlib.sha256()
             while block := downloaded.read(CHUNK):
@@ -258,7 +266,7 @@ def verify(row, path, event):
                 md5.update(block)
                 sha256.update(block)
             if md5.hexdigest() != row["md5"]:
-                raise ValueError("Routing MD5 mismatch; refresh sources before retrying")
+                raise ValueError("Download MD5 mismatch; refresh sources before retrying")
             row["sha256"] = sha256.hexdigest()
         elif row.get("sha256"):
             downloaded.seek(0)
@@ -267,7 +275,7 @@ def verify(row, path, event):
                 check_cancel(event)
                 digest.update(block)
             if digest.hexdigest() != row["sha256"]:
-                raise ValueError("Map SHA-256 does not match its Git LFS metadata")
+                raise ValueError("Download SHA-256 does not match its source metadata")
 
 
 def extract_pdfs(archive, target, storage, event, progress):

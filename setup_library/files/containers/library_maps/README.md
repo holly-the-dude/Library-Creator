@@ -115,10 +115,32 @@ No browser location permission, HTTPS, or internet connection is needed.
   In-view counts are kept separate because combined GNSS reports can overlap with
   individual constellations. Missing counts mean the receiver has not reported them.
 
-The Library's `start_library.yml` already starts maps with USB discovery and hotplug
-access. It uses the existing privileged container plus a host `/dev` bind mount so
-devices plugged in after startup become visible. This is for a **rootful Linux
-appliance**; do not add `:z` or `:Z` to the `/dev` mount.
+The Library's `start_library.yml` starts StreetZim as the USB GPS owner when
+installed and healthy. OpenStreetMap receives that feed with
+`GPS_UPSTREAM=http://10.88.0.216:8093`; its local serial reader is disabled and
+it needs no USB device access. Both viewers follow the same receiver. Stopping
+OpenStreetMap leaves StreetZim's GPS running; stopping StreetZim makes the shared
+feed unavailable until it restarts.
+
+If StreetZim is disabled, absent, or fails startup, the playbook stops it and
+uses OpenStreetMap's local GPS reader with a privileged container and `/dev`
+bind mount for hotplug. This is for a **rootful Linux appliance**; do not add
+`:z` or `:Z` to the `/dev` mount.
+
+To start OpenStreetMap manually while StreetZim already owns the receiver:
+
+```bash
+sudo podman run -d --name library_maps --replace \
+  --restart unless-stopped --ip 10.88.0.212 \
+  --add-host graphhopper:10.88.0.213 \
+  -e GPS_UPSTREAM=http://10.88.0.216:8093 \
+  -p 8080:8080 -v /Library/maps:/storage/maps \
+  localhost/library_maps:latest
+```
+
+`GPS_UPSTREAM` must be an HTTP origin without `/api/gps`. Leave it unset for the
+standalone local reader. Configure only one viewer to read the serial receiver;
+never configure the two viewers to relay to each other.
 
 For a standalone Linux viewer with GPS:
 

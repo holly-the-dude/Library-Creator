@@ -31,10 +31,36 @@ separator() { :; }
 msg_info() { :; }
 msg_warn() { :; }
 msg_ok() { :; }
+msg_error() { printf 'ERROR:%s\n' "$1"; }
+pause() { echo PAUSED; }
 confirm() { return "$CONFIRM_STATUS"; }
-do_first_boot() { printf 'FIRST:%s:%s\n' "$1" "$DISP"; }
+do_first_boot() { printf 'FIRST:%s:%s\n' "$1" "$DISP"; return "${FIRST_STATUS:-0}"; }
 '''
+        if settings.pop("real_confirm", False):
+            stubs += re.search(r'^confirm\(\) \{\n.*?^\}',
+                               BOOTSTRAP.read_text(), re.M | re.S).group() + '\n'
         return self.run_shell(stubs + '\nwhile true; do\n' + menu, inputs, **settings)
+
+    def test_yes_variants_reach_installation_and_exit_without_another_menu(self):
+        for reply in ('y', 'Y', 'yes', 'Yes', 'YES', 'yEs', ' yes '):
+            with self.subTest(reply=reply):
+                result = self.run_menu(f'1\n2\n{reply}\n', real_confirm=True)
+                self.assertEqual(result.returncode, 0)
+                self.assertIn('FIRST:--fresh:0', result.stdout)
+                self.assertNotIn('PAUSED', result.stdout)
+
+    def test_negative_empty_and_invalid_answers_do_not_install(self):
+        for reply in ('n', 'no', 'NO', '', 'maybe', 'yesterday'):
+            with self.subTest(reply=reply):
+                result = self.run_menu(f'1\n2\n{reply}\nq\n', real_confirm=True)
+                self.assertEqual(result.returncode, 0)
+                self.assertNotIn('FIRST:', result.stdout)
+
+    def test_failed_first_boot_preserves_error_until_acknowledged(self):
+        result = self.run_menu('1\n2\nyes\nq\n', real_confirm=True, FIRST_STATUS='1')
+        self.assertIn('ERROR:First Boot stopped.', result.stdout)
+        self.assertIn('PAUSED', result.stdout)
+        self.assertLess(result.stdout.index('ERROR:'), result.stdout.index('PAUSED'))
 
     def test_fresh_and_restart_both_restart_first_boot(self):
         for choice in ("1", "3"):

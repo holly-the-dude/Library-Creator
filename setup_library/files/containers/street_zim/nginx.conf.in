@@ -1,0 +1,49 @@
+worker_processes auto;
+pid /tmp/street_zim/nginx.pid;
+error_log /dev/stderr warn;
+events { worker_connections 1024; }
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    access_log off;
+    sendfile on;
+    server {
+        listen 8093;
+        root /opt/street_zim/static;
+        location = / { try_files /index.html =404; }
+        location = /streetzim-gps.js { add_header Cache-Control "no-cache"; }
+        location = /streetzim-gps.css { }
+        location = /dashboard.js { }
+        location = /style.css { }
+        location = /open-map.js { }
+        location = /maps/viewer { try_files /open-map.html =404; }
+        location = /maps/viewer/ { try_files /open-map.html =404; }
+        location = /api/status { proxy_pass http://127.0.0.1:8766; }
+        location = /health { proxy_pass http://127.0.0.1:8766; }
+        location = /api/gps {
+            proxy_pass __GPS_UPSTREAM__/api/gps;
+            proxy_connect_timeout 2s;
+            proxy_read_timeout 3s;
+            proxy_hide_header Cache-Control;
+            add_header Cache-Control "no-store" always;
+            proxy_intercept_errors on;
+            error_page 500 502 503 504 = @gps_unavailable;
+        }
+        location @gps_unavailable {
+            default_type application/json;
+            add_header Cache-Control "no-store" always;
+            return 503 '{"status":"unavailable","fix_valid":false,"message":"GPS service is unavailable. Check the GPS source on the StreetZim home page."}';
+        }
+        location = /maps { return 302 /maps/; }
+        location /maps/ {
+            proxy_pass http://127.0.0.1:8094;
+            proxy_set_header Host $http_host;
+            # Inject before the archive's scripts. ZIM bytes on disk stay intact.
+            proxy_set_header Accept-Encoding "";
+            sub_filter_once on;
+            sub_filter '<head>' '<head><script src="/streetzim-gps.js"></script><link rel="stylesheet" href="/streetzim-gps.css">';
+            proxy_read_timeout 120s;
+        }
+        location / { return 404; }
+    }
+}

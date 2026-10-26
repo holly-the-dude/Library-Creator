@@ -39,10 +39,14 @@ stop_services() {
 # An operator-requested stop is successful, unlike an unexpected child exit.
 trap 'stop_services; exit 0' TERM INT
 
-echo "Starting serial GPS status service..."
-# Unbuffered Python output makes connection/startup messages visible in logs.
-python3 -u /usr/local/lib/library_maps/gps_service.py &
-gps_pid=$!
+python3 /usr/local/lib/library_maps/configure_gps.py
+if [ -n "${GPS_UPSTREAM:-}" ]; then
+    echo "Sharing GPS from ${GPS_UPSTREAM} (local serial reader disabled)."
+else
+    echo "Starting serial GPS status service..."
+    python3 -u /usr/local/lib/library_maps/gps_service.py &
+    gps_pid=$!
+fi
 
 echo "Starting nginx on port 8080..."
 # Keep nginx attached to this PID; daemonizing would defeat child supervision.
@@ -51,7 +55,9 @@ nginx_pid=$!
 
 status=0
 # Capture the first child's exit even under set -e, then shut down its sibling.
-wait -n "$gps_pid" "$nginx_pid" || status=$?
+children=("$nginx_pid")
+if [ -n "$gps_pid" ]; then children+=("$gps_pid"); fi
+wait -n "${children[@]}" || status=$?
 echo "A maps service exited (status $status); stopping container."
 stop_services
 # A clean but unexpected child exit is still a failure of the running service.

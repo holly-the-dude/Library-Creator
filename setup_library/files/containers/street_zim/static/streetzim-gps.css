@@ -1,0 +1,8 @@
+#streetzim-library-gps {
+  position: fixed; left: 50%; bottom: max(8px, env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 10000; max-width: min(70vw, 440px);
+  padding: 7px 12px; border-radius: 18px; background: #342c1f;
+  color: #ffe5af; box-shadow: 0 2px 10px #0006; font: 12px/1.35 system-ui, sans-serif;
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#streetzim-library-gps[data-live="true"] { background: #123a2d; color: #baf4d6; }

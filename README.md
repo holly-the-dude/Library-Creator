@@ -55,8 +55,10 @@ Additional reference:
   [webserver](setup_library/files/containers/webserver/README.md),
   [wiki](setup_library/files/containers/wiki/README.md),
   [music](setup_library/files/containers/music/README.md),
+  [music_player](setup_library/files/containers/music_player/README.md),
   [calibre-web](setup_library/files/containers/calibre-web/README.md),
   [library_maps](setup_library/files/containers/library_maps/README.md),
+  [street_zim](setup_library/files/containers/street_zim/README.md),
   [data_download](setup_library/files/containers/data_download/README.md),
   [meshtastic](setup_library/files/containers/meshtastic/README.md),
   [meshflash](setup_library/files/containers/meshflash/README.md).
@@ -73,12 +75,21 @@ Additional reference:
 |---------|-----------|------------|
 | <img src="docs/icons/png/web.png" alt="" height="20" align="absmiddle"> Web hub | nginx | `http://library` / `http://10.1.1.1` |
 | <img src="docs/icons/png/wiki.png" alt="" height="20" align="absmiddle"> Wikipedia | [Kiwix](https://kiwix.org/) | `http://10.1.1.1:6902` |
-| <img src="docs/icons/png/music.png" alt="" height="20" align="absmiddle"> Music | [LMS](https://github.com/epoupon/lms) | `http://10.1.1.1:9099` |
+| <img src="docs/icons/png/music.png" alt="" height="20" align="absmiddle"> Music library | [LMS](https://github.com/epoupon/lms) | `http://library/music` (automatic login); direct: `http://10.1.1.1:9099` |
+| iPod-style player | Library Music, with Purple and Classic skins | `http://library:2001` / `http://10.1.1.1:2001` |
 | <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
-| <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> Maps | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
+| <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> OpenStreetMap | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
+| StreetZim | Regional ZIM map archives with search and navigation | `http://library:8093` / `http://10.1.1.1:8093` |
 | [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
-| [Data Download](setup_library/files/containers/data_download/README.md) | Download maps, routing data, Wikipedia, and Survivor Library collections; upload music, data, and ebooks to USB | `http://library:4826` / `http://10.1.1.1:4826` |
+| [Data Download](setup_library/files/containers/data_download/README.md) | Download map tiles, StreetZim maps, routing data, Kiwix ZIM collections, and Survivor Library collections; upload music, data, and ebooks to USB | `http://library:4826` / `http://10.1.1.1:4826` |
 | <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
+
+The home page groups the players under **Music → Music library (LMS)** and
+**Music → iPod-style player**, and the map viewers under **Maps → OpenStreetMap**
+and **Maps → StreetZim**. Unavailable choices are labelled **Not running**.
+Both players read the same USB music folder. With the updated startup playbook,
+StreetZim owns the USB GPS when installed and healthy, and OpenStreetMap shares
+its feed. See the [Usage Guide](docs/USAGE.md) for controls and content setup.
 
 ---
 
@@ -112,10 +123,17 @@ installed, Library startup launches it automatically before the webserver.
 
 The downloader checks the USB drive's available space and lets you choose:
 
-- Regional PMTiles maps → `/Library/maps/pmtiles/`
+- **OpenStreetMap tiles**: regional PMTiles maps → `/Library/maps/pmtiles/`
+- **StreetZim maps**: regional map archives → `/Library/wiki/`
 - Routing extracts → `/Library/maps/osm/` (choose a region to use after restart)
-- Wikipedia ZIM files → `/Library/wiki/`
+- **ZIM Library**: Wikipedia and other Kiwix collections → `/Library/wiki/`
 - Survivor Library category ZIP collections, extracted as PDFs → `/Library/library/`
+
+**ZIM Library** starts with English selected and offers language, collection,
+and latest-edition filters. **Maps (ZIM)** selects Kiwix map collections; these
+do not provide the PMTiles viewer's layers or GraphHopper directions. For
+StreetZim, use its separate download tab, restart the Library after downloading,
+then open **Maps → StreetZim → Open map library**.
 
 The Pi needs internet access to discover and download new content. While offline,
 the page displays **"No Internet, its really hard to go on like this"** and checks
@@ -152,7 +170,7 @@ monitors survive the end of startup; see the
 
 ### Uploading your own files
 
-Select **Upload files** beside Maps, Routing, Wikipedia, and Survivor Library.
+Select **Upload files** in Downloads.
 Choose **Music files**, **Data files**, or **Ebooks**, then select a single file,
 multiple files, or a folder and press **Upload selected**. Local uploads work
 without internet; keep the browser page open and the USB drive connected until
@@ -169,8 +187,9 @@ destination, preserving paths inside the archive, then removed. Existing files
 are kept; a conflicting filename stops the batch. The page shows upload progress
 and reports any errors.
 
-After music uploads, a popup gives the next steps in the music player:
+After music uploads, a popup gives the next steps in **Music library (LMS)**:
 **Gear icon on the right → Scanner → Scan Now → Albums → refresh the browser**.
+In the **iPod-style player**, choose **Rescan music folder** instead.
 After data or ebook uploads, a popup offers **Restart Library** or **I'll restart
 later** once active transfers finish.
 
@@ -206,9 +225,11 @@ The downloader does not yet offer file/folder deletion in its interface. See
                                              ├─ webserver 10.88.0.201:80  (the hub)
                                              ├─ wiki      10.88.0.200:6902
                                              ├─ music     10.88.0.210:5082
+                                             ├─ music_player 10.88.0.217:8080 → host :2001
                                              ├─ calibre   10.88.0.211:8083
                                              ├─ maps                :8080
                                              ├─ graphhopper 10.88.0.213:8989 (routing)
+                                             ├─ street_zim 10.88.0.216:8093 (ZIMs + shared GPS)
                                              ├─ meshtastic OR meshflash :8086 ⇦ USB radio
                                              └─ data_download :4826 → container :4286
                                         content ⇦ USB drive mounted at /Library

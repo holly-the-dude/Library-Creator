@@ -11,7 +11,7 @@
   <header><div class="wrap topbar"><a id="home" href="/">LIBRARY <span>Content manager</span></a><span class="badge">Data Download</span></div></header>
   <main class="wrap">
     <section id="internet-status" class="panel" role="status" aria-live="polite"><h2 id="internet-message">Checking internet connection…</h2><p id="internet-detail">Uploads from this device work without internet. Download sources need an internet connection on the Pi.</p></section>
-    <div class="heading"><div><p class="eyebrow">BUILD YOUR OFFLINE LIBRARY</p><h1>Bring knowledge with you.</h1><p>Choose maps, routing data, Wikipedia editions, and PDF collections to save to your Library drive.</p></div><button id="refresh" class="secondary">Refresh sources</button></div>
+    <div class="heading"><div><p class="eyebrow">BUILD YOUR OFFLINE LIBRARY</p><h1>Bring knowledge with you.</h1><p>Choose maps, routing data, offline ZIM collections, and PDF collections to save to your Library drive.</p></div><button id="refresh" class="secondary">Refresh sources</button></div>
     <section class="panel storage" aria-labelledby="storage-title">
       <div><h2 id="storage-title">Library USB drive</h2><p id="storage-text">Checking /Library…</p></div>
       <div class="meter"><progress id="storage-meter" max="100" value="0" aria-label="Storage used"></progress><p id="storage-detail"></p></div>
@@ -20,9 +20,13 @@
     <section class="sources" id="sources" aria-label="Download sources"></section>
     <section class="panel" aria-labelledby="catalog-title">
       <div class="section-heading"><div><h2 id="catalog-title">Available downloads</h2><p id="destination">Maps save to /Library/maps/pmtiles</p></div><span id="count" class="badge">Checking sources…</span></div>
-      <div class="tabs" role="group" aria-label="Content type"><button data-source="maps" aria-pressed="true">Maps</button><button data-source="routing" aria-pressed="false">Routing</button><button data-source="wiki" aria-pressed="false">Wikipedia</button><button data-source="survivor" aria-pressed="false">Survivor Library</button><button data-source="upload" aria-pressed="false">Upload files</button></div>
+      <div class="tabs" role="group" aria-label="Content type"><button data-source="maps" aria-pressed="true">OpenStreetMap tiles</button><button data-source="streetzim" aria-pressed="false">StreetZim maps</button><button data-source="routing" aria-pressed="false">Routing</button><button data-source="wiki" aria-pressed="false">ZIM Library</button><button data-source="survivor" aria-pressed="false">Survivor Library</button><button data-source="upload" aria-pressed="false">Upload files</button></div>
       <div id="download-panel">
-      <div class="filters"><label class="search">Search files<input id="search" type="search" placeholder="Search a region, language code, or category"></label><label><input id="fits" type="checkbox"> Fits available space</label><label id="latest-label" hidden><input id="latest" type="checkbox" checked> Latest editions only</label></div>
+      <div class="filters"><label class="search">Search downloads<input id="search" type="search" placeholder="Search a title, topic, region, or language"></label><label><input id="fits" type="checkbox"> Fits available space</label><label id="latest-label" hidden><input id="latest" type="checkbox" checked> Latest editions only</label></div>
+      <div id="zim-filters" class="filters zim-filters" hidden>
+        <label>Language<select id="zim-language"><option value="">All languages</option><option value="eng" selected>English</option></select></label>
+        <label>Collection<select id="zim-category"><option value="">All collections</option></select></label>
+      </div>
       <p class="hint" id="source-hint">Select regional PMTiles files for offline maps.</p>
       <div class="table-scroll"><table><thead><tr><th scope="col"><input id="select-page" type="checkbox" aria-label="Select eligible files on this page"></th><th scope="col">File / collection</th><th scope="col">Download size</th><th scope="col">Status</th></tr></thead><tbody id="files"></tbody></table></div>
       <div class="pager"><button id="previous" class="secondary">Previous</button><span id="page"></span><button id="next" class="secondary">Next</button></div>

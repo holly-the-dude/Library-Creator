@@ -51,13 +51,17 @@ DEFAULT_CONFIG = {
         },
         {
             "name": "music",
-            "display_name": "Music",
+            "display_name": "Music library (LMS)",
             "internal_ip": "10.88.0.210",
             "internal_port": 5082,
-            "external_port": 9099,
-            "check_text": "Load basic HTML",
+            "external_url": "/music",
+            "check_path": "/music",
+            "check_text": "",
             "timeout": 10,
         },
+        {"name": "music_player", "display_name": "iPod-style player",
+         "internal_ip": "10.88.0.217", "internal_port": 8080,
+         "external_port": 2001, "check_text": "<title>Library Music</title>", "timeout": 5},
         {
             "name": "ebook",
             "display_name": "eBook Reader",
@@ -67,6 +71,11 @@ DEFAULT_CONFIG = {
             "check_text": "Calibre-Web",
             "timeout": 10,
         },
+        {"name": "maps", "display_name": "OpenStreetMap", "internal_ip": "10.88.0.212",
+         "internal_port": 8080, "external_port": 8080, "check_text": "Library Maps", "timeout": 5},
+        {"name": "street_zim", "display_name": "StreetZim", "internal_ip": "10.88.0.216",
+         "internal_port": 8093, "external_port": 8093, "check_path": "/health",
+         "check_text": '"ready": true', "timeout": 5},
     ],
 }
 
@@ -149,7 +158,7 @@ def check_service(service):
 
     try:
         response = requests.get(url, timeout=timeout)
-        if check_text in response.content.decode("utf-8"):
+        if response.status_code == 200 and check_text in response.content.decode("utf-8"):
             return (
                 f'<a href="{escape(external_url, quote=True)}" '
                 f'target="_blank" rel="noopener noreferrer">{escape(display_name)}</a>'
@@ -160,6 +169,36 @@ def check_service(service):
         print(f"  Unexpected error checking {display_name}: {e}")
 
     return ""
+
+
+def service_menu(choices, title, kind, entries):
+    """Offer related services together and label unavailable choices."""
+    options = []
+    for name, label, description in entries:
+        service, available = choices.get(name, ({}, False))
+        content = f'<strong>{label}</strong><small>{description}</small>'
+        if available:
+            options.append(f'<a href="{escape(service_url(service), quote=True)}" '
+                           f'target="_blank" rel="noopener noreferrer">{content}</a>')
+        else:
+            options.append(f'<span class="service-unavailable">{content}<small>Not running</small></span>')
+    return (f'<details class="service-menu {kind}-menu" name="library-service-menu"><summary>{title}</summary>'
+            f'<div class="service-options {kind}-options" aria-label="Choose a {title.lower()} service">'
+            + ''.join(options) + '</div></details>')
+
+
+def maps_menu(choices):
+    return service_menu(choices, "Maps", "maps", (
+        ("maps", "OpenStreetMap", "Offline map layers and driving directions"),
+        ("street_zim", "StreetZim", "Regional map archives with search and navigation"),
+    ))
+
+
+def music_menu(choices):
+    return service_menu(choices, "Music", "music", (
+        ("music", "Music library (LMS)", "Browse and play with your existing music server"),
+        ("music_player", "iPod-style player", "Click-wheel player with Purple and Classic skins"),
+    ))
 
 
 def discover_services(services_config):
@@ -174,18 +213,29 @@ def discover_services(services_config):
         list of HTML strings for active services
     """
     active_services = []
+    choices = {"maps": {}, "music": {}}
+    groups = {"maps": "maps", "street_zim": "maps", "music": "music", "music_player": "music"}
+    renderers = {"maps": maps_menu, "music": music_menu}
 
     for service in services_config:
         name = service.get("display_name", service.get("name", "unknown"))
         print(f"Checking service: {name}...", end=" ")
         result = check_service(service)
+        group = groups.get(service.get("name"))
+        if group:
+            if not choices[group]:
+                active_services.append(group)
+            choices[group][service["name"]] = (service, bool(result))
+            print("UP" if result else "not found")
+            continue
         if result:
             print("UP")
             active_services.append(result)
         else:
             print("not found")
 
-    return active_services
+    return [renderers[entry](choices[entry]) if entry in renderers else entry
+            for entry in active_services]
 
 
 # =============================================================================

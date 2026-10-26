@@ -38,12 +38,21 @@ services:
     timeout: 5
 
   - name: music
-    display_name: Music
+    display_name: Music library (LMS)
     internal_ip: 10.88.0.210
     internal_port: 5082
     external_url: /music
+    check_path: /music
     check_text: ""
     timeout: 110
+
+  - name: music_player
+    display_name: iPod-style player
+    internal_ip: 10.88.0.217
+    internal_port: 8080
+    external_port: 2001
+    check_text: '<title>Library Music</title>'
+    timeout: 5
 
   - name: ebook
     display_name: eBook Reader
@@ -54,11 +63,20 @@ services:
     timeout: 10
 
   - name: maps
-    display_name: Maps
+    display_name: OpenStreetMap
     internal_ip: 10.88.0.212
     internal_port: 8080
     external_port: 8080
     check_text: Library Maps
+    timeout: 5
+
+  - name: street_zim
+    display_name: StreetZim
+    internal_ip: 10.88.0.216
+    internal_port: 8093
+    external_port: 8093
+    check_path: /health
+    check_text: '"ready": true'
     timeout: 5
 
   - name: meshtastic
@@ -111,6 +129,12 @@ containers:
     drive_map: '/Library/calibre/books:/books:rw'
     command: '/usr/local/bin/start-calibre-web.sh'
 
+  - name: music_player
+    ports: '2001:8080'
+    ip: 10.88.0.217
+    drive_map: '/Library/music:/music:ro'
+    command: ''
+
   - name: webserver
     ports: '80:80'
     ip: 10.88.0.201
@@ -125,6 +149,13 @@ containers:
 
   # Radio containers are created by start_library.yml after USB discovery.
   # Their device mapping and choice of meshtastic/meshflash are dynamic.
+
+  # GPS device access and ownership are configured by start_library.yml.
+  - name: street_zim
+    ports: '8093:8093'
+    ip: 10.88.0.216
+    drive_map: '/Library/wiki:/data:ro'
+    command: ''
 
   - name: data_download
     ports: '4826:4286'

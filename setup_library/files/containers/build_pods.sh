@@ -3,6 +3,7 @@
 # build_pods.sh
 # Iterates over each subfolder that contains a Containerfile, removes the
 # existing image (podman rmi --force), then rebuilds localhost/<folder>:latest.
+# Use Docker image format with Podman to preserve Containerfile HEALTHCHECKs.
 # Meshtastic and meshflash are both required by start_library.yml.
 #
 set -uo pipefail
@@ -66,7 +67,7 @@ for dir in */; do
 
     # Build the container.
     echo "${YELLOW}➜ Building '${tag}'...${RESET}"
-    if podman build -t "${tag}" -f "${dir}${containerfile}" "${dir}"; then
+    if podman build --format docker -t "${tag}" -f "${dir}${containerfile}" "${dir}"; then
         echo "${GREEN}  ✓ Successfully built '${tag}'${RESET}"
         built+=("${tag}")
     else
@@ -94,7 +95,7 @@ for ghfile in */graphhopper/Containerfile; do
     podman rmi --force "${tag}" >/dev/null 2>&1 || true
 
     echo "${YELLOW}➜ Building '${tag}'...${RESET}"
-    if podman build -t "${tag}" -f "${ghdir}/Containerfile" "${ghdir}"; then
+    if podman build --format docker -t "${tag}" -f "${ghdir}/Containerfile" "${ghdir}"; then
         echo "${GREEN}  ✓ Successfully built '${tag}'${RESET}"
         built+=("${tag}")
     else
