@@ -622,20 +622,18 @@ If `/dev/ttyUSB0` disappears exactly when flashing fails, suspect:
 
 Before allowing a flash, the program should check:
 
-```text
-Serial device exists
-        ↓
-ESP chip detected
-        ↓
-Selected firmware exists
-        ↓
-Selected firmware matches chip family
-        ↓
-User confirms operation
-        ↓
-Flash
-        ↓
-Verify
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TD
+    serial("Serial device exists") --> chip("ESP chip detected")
+    chip --> firmware("Selected firmware exists")
+    firmware --> match("Selected firmware matches chip family")
+    match --> confirm("User confirms operation")
+    confirm --> flash("Flash")
+    flash --> verify("Verify")
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
 ```
 
 Never automatically erase a board just because it was detected.
@@ -738,14 +736,15 @@ This makes adding boards much easier.
 
 Once installed, the flasher needs only:
 
-```text
-Linux / Raspberry Pi
-        +
-esptool
-        +
-dialog
-        +
-local Meshtastic firmware
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart LR
+    pi("Linux / Raspberry Pi") -->|"Runs"| esptool("esptool")
+    pi -->|"Runs"| dialog("dialog")
+    pi -->|"Stores"| firmware("Local Meshtastic firmware")
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
 ```
 
 Optional:
@@ -773,26 +772,29 @@ This makes the TUI flasher a good fit for an offline Raspberry Pi library or eme
 
 # 25. Recommended Final Architecture
 
-```text
-               Raspberry Pi
-                    │
-                    │ USB
-                    ▼
-              ESP32 LoRa Board
-                    │
-                    ▼
-       ┌─────────────────────────┐
-       │ Meshtastic TUI Flasher │
-       ├─────────────────────────┤
-       │ dialog                  │
-       │ esptool                 │
-       │ meshtastic CLI          │
-       │ boards.json             │
-       │ firmware/*.bin          │
-       └─────────────────────────┘
-                    │
-                    ▼
-             Completely Offline
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TB
+    subgraph pi["Raspberry Pi · completely offline at runtime"]
+        tui("Meshtastic TUI Flasher")
+        dialog("dialog")
+        esptool("esptool")
+        cli("Meshtastic Python CLI")
+        boards("boards.json")
+        firmware("Local firmware/*.bin")
+        tui --> dialog
+        tui --> esptool
+        tui --> cli
+        boards --> tui
+        firmware --> esptool
+    end
+    board("ESP32 LoRa board")
+    esptool -->|"USB · flash firmware"| board
+    cli -->|"USB · verify Meshtastic"| board
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
+    style pi fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
 ```
 
 ---
@@ -803,22 +805,19 @@ A fully offline Meshtastic TUI flasher is practical and does not require the Mes
 
 The basic workflow is:
 
-```text
-Detect USB device
-        ↓
-Detect ESP32 chip
-        ↓
-Check for existing Meshtastic
-        ↓
-Select board
-        ↓
-Select firmware
-        ↓
-Choose Update or Erase & Install
-        ↓
-Flash with esptool
-        ↓
-Verify Meshtastic
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TD
+    usb("Detect USB device") --> chip("Detect ESP32 chip")
+    chip --> check("Check for existing Meshtastic")
+    check --> board("Select board")
+    board --> firmware("Select firmware")
+    firmware --> operation("Choose Update or Erase and Install")
+    operation --> flash("Flash with esptool")
+    flash --> verify("Verify Meshtastic")
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
 ```
 
 Using `esptool` directly keeps the system simple, reliable, and easy to maintain on a Raspberry Pi.

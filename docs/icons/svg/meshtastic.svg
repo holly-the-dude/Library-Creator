@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Meshtastic Communications">
+  <path d="M32 12 L12 47 H52 Z" fill="#e6f5ea" stroke="#14432a" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M32 12 V34 M12 47 L32 34 L52 47" fill="none" stroke="#14432a" stroke-width="3" stroke-linejoin="round"/>
+  <g fill="#2e9e5b" stroke="#14432a" stroke-width="2.5">
+    <circle cx="32" cy="12" r="7"/>
+    <circle cx="12" cy="47" r="7"/>
+    <circle cx="52" cy="47" r="7"/>
+    <circle cx="32" cy="34" r="6"/>
+  </g>
+</svg>

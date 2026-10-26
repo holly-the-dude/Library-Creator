@@ -76,12 +76,12 @@ Additional reference:
 | <img src="docs/icons/png/web.png" alt="" height="20" align="absmiddle"> Web hub | nginx | `http://library` / `http://10.1.1.1` |
 | <img src="docs/icons/png/wiki.png" alt="" height="20" align="absmiddle"> Wikipedia | [Kiwix](https://kiwix.org/) | `http://10.1.1.1:6902` |
 | <img src="docs/icons/png/music.png" alt="" height="20" align="absmiddle"> Music library | [LMS](https://github.com/epoupon/lms) | `http://library/music` (automatic login); direct: `http://10.1.1.1:9099` |
-| iPod-style player | Library Music, with Purple and Classic skins | `http://library:2001` / `http://10.1.1.1:2001` |
+| <img src="docs/icons/svg/music_player.svg" alt="" height="20" align="absmiddle"> iPod-style player | Library Music, with Purple and Classic skins | `http://library:2001` / `http://10.1.1.1:2001` |
 | <img src="docs/icons/png/ebooks.png" alt="" height="20" align="absmiddle"> E-books | [Calibre-Web](https://github.com/janeczku/calibre-web) | `http://10.1.1.1:8083` |
 | <img src="docs/icons/png/maps.png" alt="" height="20" align="absmiddle"> OpenStreetMap | PMTiles + MapLibre + GraphHopper | `http://10.1.1.1:8080` |
-| StreetZim | Regional ZIM map archives with search and navigation | `http://library:8093` / `http://10.1.1.1:8093` |
-| [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
-| [Data Download](setup_library/files/containers/data_download/README.md) | Download map tiles, StreetZim maps, routing data, Kiwix ZIM collections, and Survivor Library collections; upload music, data, and ebooks to USB | `http://library:4826` / `http://10.1.1.1:4826` |
+| <img src="docs/icons/svg/street_zim.svg" alt="" height="20" align="absmiddle"> StreetZim | Regional ZIM map archives with search and navigation | `http://library:8093` / `http://10.1.1.1:8093` |
+| <img src="docs/icons/svg/meshtastic.svg" alt="" height="20" align="absmiddle"> [Meshtastic Communications](docs/USAGE.md#meshtastic-communications) | Meshtastic web client + USB Lora Radio; meshflash for firmware setup | `http://library:8086` / `http://10.1.1.1:8086` |
+| <img src="docs/icons/svg/data_download.svg" alt="" height="20" align="absmiddle"> [Data Download](setup_library/files/containers/data_download/README.md) | Download map tiles, StreetZim maps, routing data, Kiwix ZIM collections, and Survivor Library collections; upload music, data, and ebooks to USB | `http://library:4826` / `http://10.1.1.1:4826` |
 | <img src="docs/icons/png/hotspot.png" alt="" height="20" align="absmiddle"> WiFi hotspot | hostapd + dnsmasq | SSID `library` (open) |
 
 The home page groups the players under **Music → Music library (LMS)** and
@@ -219,20 +219,38 @@ The downloader does not yet offer file/folder deletion in its interface. See
 
 ## How it works (in one picture)
 
-```
- client (phone/laptop) ──WiFi "library"──▶ Raspberry Pi
-                                             ├─ hotspot   10.1.1.1  (hostapd + dnsmasq)
-                                             ├─ webserver 10.88.0.201:80  (the hub)
-                                             ├─ wiki      10.88.0.200:6902
-                                             ├─ music     10.88.0.210:5082
-                                             ├─ music_player 10.88.0.217:8080 → host :2001
-                                             ├─ calibre   10.88.0.211:8083
-                                             ├─ maps                :8080
-                                             ├─ graphhopper 10.88.0.213:8989 (routing)
-                                             ├─ street_zim 10.88.0.216:8093 (ZIMs + shared GPS)
-                                             ├─ meshtastic OR meshflash :8086 ⇦ USB radio
-                                             └─ data_download :4826 → container :4286
-                                        content ⇦ USB drive mounted at /Library
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TB
+    client("Phone, tablet, or laptop")
+    subgraph pi["Raspberry Pi"]
+        hotspot("WiFi: library<br/>10.1.1.1 · hostapd + dnsmasq")
+        hub("Library web hub<br/>http://library")
+        subgraph services["Podman services"]
+            wiki("Wiki / Kiwix<br/>Port 6902")
+            lms("Music library / LMS<br/>Hub /music · Port 9099")
+            player("iPod-style player<br/>Port 2001")
+            books("Calibre-Web<br/>Port 8083")
+            maps("OpenStreetMap<br/>Port 8080")
+            routing("GraphHopper<br/>Internal port 8989")
+            street("StreetZim<br/>Port 8093")
+            mesh("Meshtastic or meshflash<br/>Port 8086")
+            downloads("Downloads and uploads<br/>Port 4826")
+        end
+        hotspot --> hub
+        hub -->|"Service menus and links"| services
+        maps -->|"Driving directions"| routing
+        maps -->|"Shared GPS when StreetZim is healthy"| street
+    end
+    client -->|"Join WiFi"| hotspot
+    usb[("USB content drive<br/>Mounted at /Library")] --- services
+    gps("USB GPS receiver") --- street
+    radio("USB radio") --- mesh
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
+    style pi fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
+    style services fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
 ```
 
 Everything runs as Podman containers on the Pi. Content lives on a USB drive, so the

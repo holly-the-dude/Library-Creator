@@ -31,16 +31,20 @@ work proceeds. `Application.start()` starts one download worker and an internet
 monitor; the worker waits on an initially empty queue.
 
 ```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
 flowchart TD
-    Start[Start local web server] --> Check[Probe internet connectivity]
-    Check -->|Offline| Offline[Show offline message]
-    Offline --> Wait[Wait until next 30-second check]
+    Start(Start local web server) --> Check(Probe internet connectivity)
+    Check -->|Offline| Offline(Show offline message)
+    Offline --> Wait(Wait until next 30-second check)
     Wait --> Check
-    Check -->|First connection| Init[Check storage and load cached catalog]
-    Init --> Scan[Discover all five sources]
+    Check -->|First connection| Init(Check storage and load cached catalog)
+    Init --> Scan(Discover all five sources)
     Check -->|Connection restored| Scan
-    Scan --> Ready[User selects downloads]
-    Ready --> Queue[Single download worker]
+    Scan --> Ready(User selects downloads)
+    Ready --> Queue(Single download worker)
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
 ```
 
 `sources.internet_available()` sends HTTPS HEAD requests to GitHub, Kiwix,

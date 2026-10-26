@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="iPod-style player">
+  <rect x="14" y="4" width="36" height="56" rx="7" fill="#e6f5ea" stroke="#14432a" stroke-width="2.5"/>
+  <rect x="20" y="10" width="24" height="18" rx="2" fill="#2e9e5b" stroke="#14432a" stroke-width="2"/>
+  <path d="M29 14 L37 19 L29 24 Z" fill="#e6f5ea"/>
+  <circle cx="32" cy="43" r="11" fill="#2e9e5b" stroke="#14432a" stroke-width="2.5"/>
+  <circle cx="32" cy="43" r="4" fill="#e6f5ea" stroke="#14432a" stroke-width="2"/>
+</svg>

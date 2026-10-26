@@ -91,23 +91,15 @@ All configuration is embedded in `hotspot.py`. Key settings:
 
 ## Network Diagram
 
-```
-Client Device
-     │
-     │ WiFi (SSID: library)
-     │
-     ▼
-┌─────────────────────┐
-│   hotspot container  │
-│   10.1.1.1 (wlan0)  │
-│   hostapd + dnsmasq  │
-└─────────────────────┘
-     │
-     │ podman network (10.88.0.x)
-     │
-     ▼
-┌─────────────────────┐
-│ webserver container  │
-│ 10.88.0.201 (:80)   │
-└─────────────────────┘
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TB
+    client("Client device")
+    hotspot("hotspot container<br/>10.1.1.1 on wlan0<br/>hostapd + dnsmasq")
+    hub("webserver container<br/>10.88.0.201:80")
+    client -->|"WiFi · SSID library"| hotspot
+    hotspot -->|"Podman network · 10.88.0.x"| hub
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
 ```

@@ -42,29 +42,43 @@ for discovery, port mapping and deployment.
 
 ## Architecture overview
 
-```
-                        ┌─────────────────────────────────────────────
-                        │             Raspberry Pi (host)
-   client device        │
-   ┌──────────┐  WiFi   │  ┌────────────┐   podman net (10.88.0.0/24)
-   │ phone /  │─────────┼─▶│  hotspot   │
-   │ laptop   │  SSID   │  │ 10.1.1.1   │   ┌───────────────────────┐
-   └──────────┘"library"│  │ hostapd +  │   │ webserver 10.88.0.201 │
-                        │  │ dnsmasq    │──▶│ nginx :80 (the hub)  │
-                        │  └────────────┘   └──────────┬────────────┘
-                        │                              │ monitors
-                        │   ┌───────────┐  ┌───────────┴───┐ ┌───────┐
-                        │   │wiki       │  │ music         │ │ maps  │
-                        │   │10.88.0.200│  │ 10.88.0.210   │ │ :8080 │
-                        │   │Kiwix :6902│  │ LMS :5082/9099│ └───┬───┘
-                        │   └───────────┘  └───────────────┘     │/api/route
-                        │ ┌─────────────────────────────┐   ┌────┴───────────┐
-                        │ │calibre-web 10.88.0.211 :8083│   │ graphhopper    │
-                        │ └─────────────────────────────┘   │ 10.88.0.213    │
-                        │                                   │ :8989 (routing)│
-                        │                                   └────────────────┘
-                        │        content ⇦ /Library (USB, exFAT)
-                        └─────────────────────────────────────────────
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"primaryColor":"#1565c0","primaryTextColor":"#ffffff","primaryBorderColor":"#0d47a1","secondaryColor":"#4b5563","secondaryTextColor":"#ffffff","tertiaryColor":"#4b5563","tertiaryTextColor":"#ffffff","textColor":"#ffffff","lineColor":"#22c55e","defaultLinkColor":"#22c55e","clusterBkg":"#4b5563","clusterBorder":"#9ca3af","titleColor":"#ffffff","edgeLabelBackground":"#4b5563","noteBkgColor":"#4b5563","noteTextColor":"#ffffff"}}}%%
+flowchart TB
+    client("Client browser")
+    subgraph pi["Raspberry Pi host"]
+        hotspot("Hotspot: wlan0<br/>10.1.1.1 · SSID library")
+        subgraph network["Podman bridge: 10.88.0.0/24"]
+            hub("webserver · 10.88.0.201:80<br/>nginx + library.py")
+            subgraph services["Application containers · internal addresses"]
+                wiki("wiki · 10.88.0.200:6902")
+                lms("music · 10.88.0.210:5082<br/>Host port 9099")
+                player("music_player · 10.88.0.217:8080<br/>Host port 2001")
+                books("calibre-web · 10.88.0.211:8083")
+                maps("library_maps · 10.88.0.212:8080")
+                street("street_zim · 10.88.0.216:8093")
+                radio("meshtastic OR meshflash<br/>10.88.0.214:8086")
+                downloads("data_download · 10.88.0.215:4286<br/>Host port 4826")
+            end
+            routing("graphhopper · 10.88.0.213:8989")
+            hub -.->|"HTTP health probes"| services
+            hub -->|"/music proxy and automatic login"| lms
+            maps -->|"/api/route"| routing
+            maps -->|"/api/gps when StreetZim is healthy"| street
+        end
+        hotspot -->|"Published host ports"| network
+        storage[("USB content and persistent state<br/>/Library · exFAT")] --- services
+        storage --- routing
+        gps("USB GPS") --- street
+        usbRadio("USB Meshtastic radio") --- radio
+    end
+    client -->|"WiFi: library"| hotspot
+
+    classDef default fill:#1565c0,stroke:#0d47a1,color:#ffffff,stroke-width:2px,rx:10,ry:10;
+    linkStyle default stroke:#22c55e,stroke-width:4px,color:#ffffff
+    style pi fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
+    style network fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
+    style services fill:#4b5563,stroke:#9ca3af,color:#ffffff,stroke-width:2px,rx:12,ry:12;
 ```
 
 - The **hotspot** container owns `wlan0`, assigns itself `10.1.1.1/24`, and runs `hostapd`
@@ -518,6 +532,19 @@ example.
 
 ## Conventions
 
+- Use fenced `mermaid` blocks for architecture, network, and workflow diagrams in
+  Markdown. Keep labels readable, quote labels containing paths or punctuation,
+  and use standard flowchart or sequence-diagram syntax. Keep directory listings,
+  commands, and terminal examples in text/code blocks. View diagrams in a Markdown
+  renderer with Mermaid support; other viewers may show the diagram source.
+- Style every Mermaid diagram consistently: rounded blue nodes (`#1565c0`),
+  white text (`#ffffff`), green links and arrowheads (`#22c55e`) with a minimum
+  4px stroke, and grey group/label/note backgrounds (`#4b5563`). Copy the `init`
+  theme, `classDef default`, `linkStyle default`, and group `style` settings from
+  the architecture diagram above when adding a flowchart. Use rounded-node
+  syntax for boxes; keep storage cylinders where they convey meaning.
+  End `linkStyle` lines with a newline rather than a semicolon: a trailing
+  hex colour followed by `;` can be interpreted as an entity by Mermaid.
 - Container images are tagged `localhost/<name>:latest` and saved as `<name>.tar`.
 - Static container IPs live in `10.88.0.0/24`; the hotspot/gateway is `10.1.1.1`.
 - All persistent content lives under `/Library` (the USB) so images stay stateless.
