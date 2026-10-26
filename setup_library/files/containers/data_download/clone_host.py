@@ -37,14 +37,18 @@ def copy_files(args, update):
         with subprocess.Popen(['rsync', '--info=progress2', *args], text=True,
                               stdout=subprocess.PIPE, stderr=errors) as process:
             last = 0
+            copied = 0
             for line in process.stdout:
                 match = re.match(r'\s*([\d,]+)\s+\d+%', line)
-                if match and time.monotonic() - last >= 1:
-                    update(copied=int(match[1].replace(',', '')))
-                    last = time.monotonic()
+                if match:
+                    copied = int(match[1].replace(',', ''))
+                    if time.monotonic() - last >= 1:
+                        update(copied=copied)
+                        last = time.monotonic()
             if process.wait():
                 errors.seek(0)
                 raise ValueError('Copy failed: ' + errors.read()[-1200:])
+            update(copied=copied)  # Publish the final counter even inside the throttle window.
 
 
 def walk(node):
@@ -137,8 +141,10 @@ def source_info(kind, disks):
         raise ValueError('SD cloning requires the standard Pi SD layout: FAT /boot/firmware and ext4 /')
     validate_boot_source(root, boot)
     amount = used('/')
-    boot_size = max(512 * MIB, ((used('/boot/firmware') + 128 * MIB + MIB - 1) // MIB) * MIB)
-    return {'kind': kind, 'device': root_disk['name'], 'used': amount + used('/boot/firmware'),
+    boot_used = used('/boot/firmware')
+    boot_size = max(512 * MIB, ((boot_used + 128 * MIB + MIB - 1) // MIB) * MIB)
+    return {'kind': kind, 'device': root_disk['name'], 'used': amount + boot_used,
+            'root_used': amount, 'boot_used': boot_used,
             'required': boot_size + amount + max(512 * MIB, amount // 10) + 16 * MIB,
             'boot_size': boot_size, 'root': root, 'boot': boot,
             'identity': identity(root_disk)}, protected
@@ -255,7 +261,7 @@ class Cloner:
                 raise ValueError('Confirm the destination device name to erase it')
             self.revalidate(info, target)
             self.plans.clear()
-            self.state = {'status': 'running', 'message': 'Preparing clone…',
+            self.state = {'status': 'running', 'phase': 'preparing', 'message': 'Preparing clone…',
                           'source': info['kind'], 'destination': target['device']}
             self.update(**self.state)
             threading.Thread(target=self.worker, args=(info, target), daemon=True).start()
@@ -274,8 +280,10 @@ class Cloner:
         scratch = None
         error = None
         try:
-            self.update(message='Stopping Library readers while files are copied…')
+            self.update(phase='stopping', containers_done=0, containers_total=None,
+                        message='Finding Library containers to stop…')
             running = json.loads(run('podman', 'ps', '--format', 'json'))
+            readers = []
             for container in running:
                 names = container.get('Names') or []
                 if isinstance(names, str):
@@ -283,12 +291,19 @@ class Cloner:
                 # Hotspot keeps the browser connection alive. Downloader blocks writes.
                 if 'data_download' in names or 'hotspot' in container.get('Image', ''):
                     continue
+                readers.append(container)
+            self.update(containers_total=len(readers))
+            for number, container in enumerate(readers):
                 cid = container['Id']
+                names = container.get('Names') or [cid[:12]]
+                name = names if isinstance(names, str) else names[0]
+                self.update(message=f'Stopping container {number + 1} of {len(readers)}: {name}…')
                 stopped.append(cid)
                 run('podman', 'stop', '--time', '30', cid, timeout=90)
+                self.update(containers_done=number + 1)
             info = self.revalidate(info, target)  # Last check before any disk writes.
             disk = target['device']
-            self.update(message='Partitioning and formatting destination…')
+            self.update(phase='formatting', message='Partitioning and formatting destination…')
             if info['kind'] == 'sd':
                 layout = f'label: dos\nlabel-id: 0x{secrets.token_hex(4)}\nstart=8MiB, size={info["boot_size"] // MIB}MiB, type=c\ntype=83\n'
             else:
@@ -312,7 +327,8 @@ class Cloner:
             run('mount', last, str(scratch))
             mounts.append(scratch)
             if info['kind'] == 'sd':
-                self.update(message='Copying SD root filesystem…')
+                self.update(phase='copying_root', copied=0, copy_total=info['root_used'],
+                            message='Copying SD root filesystem…')
                 args = ['-aHAXx', '--numeric-ids', '--exclude=/Library/*',
                         '--exclude=/dev/*', '--exclude=/proc/*', '--exclude=/sys/*',
                         '--exclude=/run/*', '--exclude=/tmp/*', '--exclude=/mnt/*',
@@ -322,21 +338,25 @@ class Cloner:
                 boot.mkdir(parents=True, exist_ok=True)
                 run('mount', first, str(boot))
                 mounts.append(boot)
-                self.update(message='Copying SD boot files…', copied=0)
+                self.update(phase='copying_boot', copied=0, copy_total=info['boot_used'],
+                            message='Copying SD boot files…')
                 copy_files(['-rtx', '--modify-window=2', '/boot/firmware/', str(boot) + '/'], self.update)
                 rewrite_boot(scratch, info, last, first)
                 for name in ('dev', 'proc', 'sys', 'run', 'tmp', 'mnt', 'media', 'Library'):
                     (scratch / name).mkdir(exist_ok=True)
                 (scratch / 'tmp').chmod(0o1777)
             else:
-                self.update(message='Copying Library_USB files… This can take several hours.')
+                self.update(phase='copying_usb', copied=0, copy_total=info['used'],
+                            message='Copying Library_USB files… This can take several hours.')
                 copy_files(['-rtx', '--modify-window=2', '/Library/', str(scratch) + '/'], self.update)
-            self.update(message='Flushing files and safely unmounting destination…')
+            self.update(phase='finalizing', message='Flushing files and safely unmounting destination…')
             os.sync()
         except Exception as exc:
             error = str(exc)
         finally:
             cleanup_errors = []
+            if error:
+                self.update(phase='finalizing', message='Cleaning up after copy failure…')
             for path in reversed(mounts):
                 try:
                     run('umount', str(path), timeout=120)
@@ -347,16 +367,21 @@ class Cloner:
                     scratch.rmdir()
                 except OSError as exc:
                     cleanup_errors.append(str(exc))
+            self.update(phase='restarting', containers_done=0, containers_total=len(stopped),
+                        message='Restarting Library containers…')
+            restarted = 0
             for cid in stopped:
                 try:
                     run('podman', 'start', cid, timeout=120)
+                    restarted += 1
+                    self.update(containers_done=restarted)
                 except Exception as exc:
                     cleanup_errors.append(str(exc))
             if error or cleanup_errors:
-                self.update(status='failed', message='; '.join(filter(None, [error] + cleanup_errors)) +
+                self.update(status='failed', phase='failed', message='; '.join(filter(None, [error] + cleanup_errors)) +
                             ' Clone is not confirmed complete. Check host logs/mounts before removing it.')
             else:
-                self.update(status='complete', message='Clone complete. Remove the destination before restarting the Library.')
+                self.update(status='complete', phase='complete', message='Clone complete. Remove the destination before restarting the Library.')
 
 
 class Handler(socketserver.StreamRequestHandler):

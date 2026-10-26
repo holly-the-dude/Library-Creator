@@ -75,7 +75,7 @@ function renderStorage() {
   const disk = state.storage;
   $("storage-text").textContent = disk.ready ? `${bytes(disk.free)} free of ${bytes(disk.total)}` : disk.error || "Checking drive…";
   $("storage-meter").value = disk.ready ? disk.used / disk.total * 100 : 0;
-  $("storage-detail").textContent = disk.ready ? `${bytes(disk.used)} used · ${bytes(disk.reserve)} kept free` : "Uploads and downloads need a writable, mounted drive.";
+  $("storage-detail").textContent = disk.ready ? `${bytes(disk.used)} used · ${bytes(disk.reserve)} ` : "Uploads and downloads need a writable, mounted drive.";
 }
 const languageNames = typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames(["en"], {type: "language"}) : null;
 function languageName(code) {
@@ -314,13 +314,42 @@ async function download(ids) {
   catch (error) { notice(error.message); }
 }
 function uploadCategory() { return document.querySelector('[name="upload-category"]:checked').value; }
+function renderCloneProgress(info) {
+  const panel = $("clone-progress-panel"), bar = $("clone-progress"), label = $("clone-progress-text");
+  panel.hidden = !["running", "complete"].includes(info.status);
+  bar.max = 100;
+  bar.removeAttribute("value"); // Indeterminate while preparing, formatting or flushing.
+  label.textContent = "Working…";
+  bar.setAttribute("aria-label", info.message || "Clone progress");
+  if (panel.hidden) return;
+  if (info.status === "complete") {
+    bar.value = 100;
+    label.textContent = "Clone complete · 100%";
+  } else if (["stopping", "restarting"].includes(info.phase)) {
+    const done = info.containers_done || 0, total = info.containers_total;
+    if (total != null) {
+      bar.value = total > 0 ? Math.min(100, done / total * 100) : 100;
+      label.textContent = `${done} of ${total} containers ${info.phase === "stopping" ? "stopped" : "restarted"}`;
+    } else label.textContent = "Finding Library containers…";
+  } else if (info.phase?.startsWith("copying_") || (!info.phase && info.copied != null)) {
+    const copied = info.copied || 0, total = info.copy_total;
+    // Used space includes allocation/metadata and may differ from rsync bytes.
+    // Show an estimate per filesystem; completion waits for flush and cleanup.
+    if (total > 0) {
+      const percent = Math.min(99, Math.max(0, Math.floor(copied / total * 100)));
+      bar.value = percent;
+      label.textContent = `Copied ${bytes(copied)} of about ${bytes(total)} · ≈${percent}% of this stage`;
+    } else label.textContent = `Copied ${bytes(copied)} in this stage`;
+  } else if (info.phase === "finalizing") label.textContent = "Finishing writes and safely unmounting…";
+  else if (info.phase === "formatting") label.textContent = "Preparing the destination…";
+}
 function renderClone() {
   const info = state.clone || {};
   const transfers = uploadBusy || state.upload_active || state.refreshing || state.jobs.some(job => activeStates.has(job.status));
   $("clone-scan").disabled = cloning() || !info.available || state.restart?.requested;
   $("clone-source").disabled = cloning();
   $("clone-status").textContent = cloneError || (cloning() ? info.message || "Contacting clone service…" : transfers ? "Wait for transfers and source refresh to finish before cloning." : info.message || "Checking host clone service…");
-  if (info.status === "running" && info.copied != null) $("clone-status").textContent += ` Copied ${bytes(info.copied)} in this stage.`;
+  renderCloneProgress(info);
   $("clone-capacity").textContent = cloneScan ? `Source: ${cloneScan.source.device} · Used: ${bytes(cloneScan.source.used)} · Destination needs at least ${bytes(cloneScan.source.required)} including filesystem overhead.` : "";
   $("clone-targets").replaceChildren();
   if (!cloneScan) return;

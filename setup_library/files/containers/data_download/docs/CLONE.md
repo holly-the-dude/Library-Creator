@@ -32,7 +32,14 @@ The Library readers will be temporarily unavailable. Avoid manual changes,
 other power controls, container restarts, or unplugging either drive during a
 clone. You may close/reopen the browser; the host continues copying.
 
-The page reports the current stage and bytes copied. On success, the destination
+The yellow-orange progress bar counts containers as they stop and restart.
+While copying, it highlights bytes copied and an estimated percentage based on
+used space for that filesystem: USB content, SD root, or SD boot. SD progress
+resets for the boot-files stage. Used space includes filesystem metadata and
+allocation overhead, so this estimate can differ from the final copied bytes.
+Formatting and final writes show an indeterminate bar; the page reports the
+clone complete only after cleanup and reader restart succeed.
+On success, the destination
 has been synced and unmounted. **Remove the clone before restarting**: the USB
 copy deliberately has the same `Library_USB` label. Failed copies must not be
 used as finished clones. If cleanup failed or power was lost, check mounts and
@@ -116,7 +123,9 @@ eligible spare drive after confirmation.
 ## API and testing
 
 `GET /api/state` includes `clone.available`, `clone.status`, `clone.message`,
-and, while working, the source, destination and copied byte count for the stage.
+and, while working, the source, destination, `phase`, and `copied` byte count.
+Copy phases include `copy_total` (estimated used bytes for that filesystem).
+Stopping/restarting phases include `containers_done` and `containers_total`.
 `POST /api/clone/scan` takes `{"source":"sd"}` or `{"source":"usb"}` and returns
 source used/required bytes and eligible targets with `fits` and a one-use token.
 `POST /api/clone/start` takes the token and a `confirmation` matching the displayed

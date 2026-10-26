@@ -11,7 +11,7 @@ function ui() {
     return {value: '', checked: false, dataset: {}, children: [],
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
-      setAttribute() {}, addEventListener() {}};
+      setAttribute() {}, removeAttribute(name) { delete this[name]; }, addEventListener() {}};
   }
   const document = {
     getElementById(id) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
@@ -111,7 +111,7 @@ test('Clone tab works offline and reports used-data capacity and small destinati
   u.run(`state.clone.status = 'running'; state.clone.message = 'Copying'; state.clone.copied = 1024; renderClone();`);
   assert.equal(u.nodes.get('clone-scan').disabled, true);
   assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
-  assert.match(u.nodes.get('clone-status').textContent, /Copied 1.0 KiB/);
+  assert.match(u.nodes.get('clone-progress-text').textContent, /Copied 1.0 KiB/);
 });
 
 test('Clone controls explain missing host support and disable starting during transfers', () => {
@@ -123,4 +123,43 @@ test('Clone controls explain missing host support and disable starting during tr
     cloneScan={source:{device:'/dev/sda1',used:100,required:200},targets:[{device:'/dev/sdb',model:'USB',size:300,fits:true}]}; renderClone();`);
   assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
   assert.match(u.nodes.get('clone-status').textContent, /Wait for transfers/);
+});
+
+
+test('Clone progress counts containers and estimates USB and SD copy stages', () => {
+  const u = ui();
+  u.run(`state.clone = {status:'running',phase:'stopping',containers_done:2,containers_total:4}; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress-panel').hidden, false);
+  assert.equal(u.nodes.get('clone-progress').value, 50);
+  assert.equal(u.nodes.get('clone-progress-text').textContent, '2 of 4 containers stopped');
+  for (const phase of ['copying_usb', 'copying_root', 'copying_boot']) {
+    u.run(`state.clone={status:'running',phase:'${phase}',copied:25*1024**3,copy_total:100*1024**3}; renderClone();`);
+    assert.equal(u.nodes.get('clone-progress').value, 25);
+    assert.match(u.nodes.get('clone-progress-text').textContent, /Copied 25.0 GiB of about 100.0 GiB.*25%/);
+  }
+  u.run(`state.clone.copied=0; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress').value, 0);
+  u.run(`state.clone.copied=200*1024**3; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress').value, 99); // Metadata/sparse files may skew the estimate.
+  u.run(`state.clone.copy_total=0; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress').value, undefined);
+});
+
+test('Clone progress waits for cleanup and reader restart before announcing completion', () => {
+  const u = ui();
+  for (const phase of ['preparing', 'formatting', 'finalizing']) {
+    u.run(`state.clone={status:'running',phase:'${phase}',copied:1000}; renderClone();`);
+    assert.equal(u.nodes.get('clone-progress').value, undefined);
+    assert.doesNotMatch(u.nodes.get('clone-progress-text').textContent, /Copied|100%/);
+  }
+  u.run(`state.clone={status:'running',phase:'restarting',containers_done:1,containers_total:2}; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress').value, 50);
+  assert.match(u.nodes.get('clone-progress-text').textContent, /1 of 2 containers restarted/);
+  u.run(`state.clone.status='complete'; renderClone();`);
+  assert.equal(u.nodes.get('clone-progress').value, 100);
+  assert.match(u.nodes.get('clone-progress-text').textContent, /Clone complete/);
+  for (const status of ['idle', 'failed', 'unavailable']) {
+    u.run(`state.clone.status='${status}'; renderClone();`);
+    assert.equal(u.nodes.get('clone-progress-panel').hidden, true);
+  }
 });

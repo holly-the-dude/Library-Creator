@@ -38,10 +38,14 @@
         <label>Copy from <select id="clone-source"><option value="sd">SD card (bootable system)</option><option value="usb">Library_USB (content drive)</option></select></label>
         <p>The destination only needs room for the used data plus filesystem overhead, even if the source drive is much larger. The SD copy does not include the separate Library_USB content drive.</p>
         <p><strong>All data on the selected destination will be erased.</strong> Only unused, unmounted USB destinations are offered. The running SD card and Library_USB drive are protected.</p>
-        <button id="clone-scan" class="secondary">Scan for destination</button>
+        <button id="clone-scan">Scan for destination</button>
         <p id="clone-capacity"></p>
         <div id="clone-targets"></div>
         <p id="clone-status" role="status" aria-live="polite"></p>
+        <div id="clone-progress-panel" hidden>
+          <progress id="clone-progress" max="100" aria-label="Clone progress" aria-describedby="clone-progress-text"></progress>
+          <p id="clone-progress-text" role="status" aria-live="polite"></p>
+        </div>
         <p>Finish transfers first. Library readers will stop during the copy and start again afterward. Keep power and both drives connected until completion. You can close this page and return to check progress. Remove the finished clone before restarting.</p>
       </section>
       <section id="upload-panel" aria-label="Upload files" hidden>

@@ -7,7 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import app
@@ -124,11 +124,24 @@ class WorkerTests(unittest.TestCase):
             with self.subTest(kind=kind, fails=fails), tempfile.TemporaryDirectory() as tmp:
                 scratch = Path(tmp) / 'mount'
                 scratch.mkdir()
-                info = {'kind': kind, 'boot_size': 512 * host.MIB}
+                info = {'kind': kind, 'boot_size': 512 * host.MIB, 'used': 1100,
+                        'root_used': 1000, 'boot_used': 100}
                 cloner = host.Cloner()
                 commands = []
+                phases = []
+                def copying(args, update):
+                    phases.append(cloner.status())
+                    if fails:
+                        raise ValueError("copy broke")
+                    update(copied=cloner.status()["copy_total"])
                 def command(*args, **kwargs):
                     commands.append((args, kwargs))
+                    if args[:2] == ('podman', 'stop'):
+                        self.assertEqual(cloner.status()['phase'], 'stopping')
+                        self.assertEqual(cloner.status()['containers_done'], 0)
+                        self.assertEqual(cloner.status()['containers_total'], 1)
+                    if args[:2] == ('podman', 'start'):
+                        self.assertEqual(cloner.status()['phase'], 'restarting')
                     if args[:2] == ('podman', 'ps'):
                         return json.dumps([{'Id': 'reader', 'Names': ['wiki'], 'Image': 'wiki'}])
                     return ''
@@ -138,7 +151,7 @@ class WorkerTests(unittest.TestCase):
                      patch.object(host.Path, 'exists', return_value=True), \
                      patch.object(host.Path, 'rmdir'), patch.object(host.os, 'sync'), \
                      patch.object(host, 'rewrite_boot') as rewrite, \
-                     patch.object(host, 'copy_files', side_effect=ValueError('copy broke') if fails else None) as cp:
+                     patch.object(host, 'copy_files', side_effect=copying) as cp:
                     cloner.worker(info, {'device': '/dev/sdb'})
                 args = [entry[0] for entry in commands]
                 self.assertIn(('podman', 'start', 'reader'), args)
@@ -146,6 +159,8 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(cloner.status()['status'], 'failed' if fails else 'complete')
                 layout = next(kwargs['input'] for cmd, kwargs in commands if cmd[0] == 'sfdisk')
                 if kind == 'sd':
+                    self.assertEqual([(p['phase'], p['copied'], p['copy_total']) for p in phases],
+                                     [('copying_root', 0, 1000), ('copying_boot', 0, 100)])
                     self.assertIn('label: dos', layout)
                     self.assertIn('size=512MiB', layout)
                     self.assertIn(('mkfs.ext4', '-F', '-m', '0', '-L', 'rootfs', '/dev/sdb2'), args)
@@ -154,6 +169,8 @@ class WorkerTests(unittest.TestCase):
                     rewrite.assert_called_once_with(scratch, info, '/dev/sdb2', '/dev/sdb1')
                     self.assertLess(args.index(('umount', str(scratch / 'boot/firmware'))), args.index(('umount', str(scratch))))
                 else:
+                    self.assertEqual([(p['phase'], p['copied'], p['copy_total']) for p in phases],
+                                     [('copying_usb', 0, 1100)])
                     self.assertIn('label: gpt', layout)
                     self.assertIn(('mkfs.exfat', '-L', 'Library_USB', '/dev/sdb1'), args)
                     self.assertIn('/Library/', cp.call_args.args[0])
@@ -166,6 +183,29 @@ class WorkerTests(unittest.TestCase):
             cloner = host.Cloner(state)
             self.assertEqual(cloner.status()['status'], 'failed')
             self.assertIn('interrupted', cloner.status()['message'])
+
+
+class CopyProgressTests(unittest.TestCase):
+    def test_final_counter_is_published_even_when_progress_is_throttled(self):
+        process = MagicMock()
+        process.stdout = io.StringIO('  1,024  50% 1MB/s\n  2,048 100% 1MB/s\n')
+        process.wait.return_value = 0
+        update = MagicMock()
+        with patch.object(host.subprocess, 'Popen') as popen, patch.object(host.time, 'monotonic', return_value=10):
+            popen.return_value.__enter__.return_value = process
+            host.copy_files(['-rtx', '/source/', '/destination/'], update)
+        self.assertEqual([c.kwargs['copied'] for c in update.call_args_list], [1024, 2048])
+
+    def test_failed_copy_does_not_publish_a_successful_final_counter(self):
+        process = MagicMock()
+        process.stdout = io.StringIO('  1,024  50% 1MB/s\n')
+        process.wait.return_value = 1
+        update = MagicMock()
+        with patch.object(host.subprocess, 'Popen') as popen, patch.object(host.time, 'monotonic', return_value=10):
+            popen.return_value.__enter__.return_value = process
+            with self.assertRaisesRegex(ValueError, 'Copy failed'):
+                host.copy_files(['-rtx', '/source/', '/destination/'], update)
+        update.assert_called_once_with(copied=1024)
 
 
 class AppCloneTests(unittest.TestCase):
