@@ -431,10 +431,16 @@ function confirmCloneDestination(target, sdClone) {
 // are separate checks; the host revalidates the destination before erasing it.
 function renderClone() {
   const info = state.clone || {};
-  const transfers = uploadBusy || state.upload_active || state.refreshing || state.jobs.some(job => activeStates.has(job.status));
+  const transfers = uploadBusy || state.upload_active || state.jobs.some(job => activeStates.has(job.status));
+  const waiting = cloneBusy ? "Waiting for clone request…"
+    : info.status === "running" ? "Clone in progress…"
+    : info.status === "unknown" ? "Waiting for clone service…"
+    : !info.available ? "Clone service unavailable"
+    : state.restart?.requested ? "Library restarting…"
+    : transfers ? "Waiting for transfers…" : "";
   $("clone-scan").disabled = cloning() || !info.available || state.restart?.requested;
   $("clone-source").disabled = cloning();
-  $("clone-status").textContent = cloneError || (cloning() ? info.message || "Contacting clone service…" : transfers ? "Wait for transfers and source refresh to finish before cloning." : info.message || "Checking host clone service…");
+  $("clone-status").textContent = cloneError || (cloning() ? info.message || "Contacting clone service…" : transfers ? "Wait for transfers to finish before cloning." : info.message || "Checking host clone service…");
   renderCloneProgress(info);
   $("clone-capacity").textContent = cloneScan ? `Source: ${cloneScan.source.device} · Used: ${bytes(cloneScan.source.used)} · Destination needs at least ${bytes(cloneScan.source.required)} including filesystem overhead.` : "";
   $("clone-targets").replaceChildren();
@@ -453,7 +459,7 @@ function renderClone() {
     row.append(element("p", target.media === "sd" ? "SD card detected" : target.media === "other" ? "Other storage media" : "Media type unidentified"));
     if (needsVerification) row.append(element("p", "Cannot identify the media type. Before copying the operating system, you must verify that this destination is an SD card in a reader.", "warning"));
     if (!allowed) row.append(element("p", target.blocked_reason || "This destination has not been approved for OS cloning. Update the host clone service and scan again.", "warning"));
-    const button = element("button", !allowed ? "SD card required" : target.fits ? "Erase and clone…" : "Too small");
+    const button = element("button", !allowed ? "SD card required" : !target.fits ? "Too small" : waiting || "Erase and clone…");
     button.disabled = !allowed || !target.fits || cloning() || transfers || !info.available || state.restart?.requested;
     button.addEventListener("click", async () => {
       if (!allowed) return;

@@ -17,6 +17,9 @@ SD uses used root bytes + 10% (at least 512 MiB), a boot partition large enough
 for its files, and alignment. This is a conservative estimate, not a guarantee
 against source growth or different allocation sizes. Exactly 100 GB of media
 is insufficient for 100 GB of files plus filesystem metadata.
+After formatting, the helper also checks the actual destination filesystem's
+available space before copying each filesystem. SD root copies preserve sparse
+files, so unallocated zero-filled regions need not expand into allocated blocks.
 
 Only unused, writable USB disks (or native SD cards for OS cloning) are scanned. Mounted partitions, swap,
 active device-mapper/RAID holders, the running system disk, boot disk, and
@@ -50,7 +53,11 @@ non-SD media. If previously identified SD media becomes unknown, scan again to
 get the verification prompt. These checks apply to the downloader Clone flow;
 the existing startup-time cloning block remains unchanged.
 
-Finish uploads, queued downloads, extraction, and catalog refresh first.
+Finish uploads, queued downloads, and extraction first. Background catalog
+discovery does not delay the **Erase and clone** button: it only reads network
+metadata and updates memory. Its disk-cache write is skipped if a clone is
+running or the host clone status is unknown. Disabled clone buttons show what
+they are waiting for, such as active transfers or the host service.
 During cloning, the downloader blocks new writes, refresh, routing changes,
 and its Restart button. Other running Podman containers stop for the copy,
 except the downloader and hotspot (which keep the browser connected).
@@ -89,7 +96,7 @@ flow, because it issues additional Podman commands.
 
 - **SD:** the standard Pi `/dev/mmcblk0` layout with two partitions: FAT at
   `/boot/firmware` and ext4 at `/`. File-level rsync preserves root ownership,
-  permissions, hard links, ACLs and xattrs. The new FAT/ext4 partitions fill the
+  permissions, hard links, sparse files, ACLs and xattrs. The new FAT/ext4 partitions fill the
   destination as appropriate; fresh UUIDs/PARTUUIDs are written to the copy's
   `fstab` and `cmdline.txt`. The separate `/Library` content drive is excluded.
   Destination sectors must be 512 bytes, with disk capacity below 2 TiB.
@@ -160,6 +167,41 @@ The web app uses its existing request-token protection, not a login: anyone
 with access to the trusted Library LAN can operate it, including erasing an
 eligible spare drive after confirmation.
 
+## Troubleshooting a full destination
+
+If rsync reports **No space left on device**, the clone is incomplete. The
+filename identifies the stage: `/mnt/library-clone-.../boot/initrd.img-...`
+belongs to the destination **root** filesystem; files under its
+`boot/firmware/` directory are copied to the separate FAT boot partition.
+Increasing only the boot partition does not fix a full root filesystem.
+
+Earlier helper versions left the root partition's starting offset unspecified.
+This could create a **7 MiB root partition before the boot partition**, leaving
+most of the card unused. If `lsblk` shows that layout, update the helper and run
+a new clone. The corrected layout explicitly starts root after boot and uses
+the remaining card space. A failed copy cannot be repaired just by enlarging
+its partition: the missing files still need to be copied.
+
+The scan estimates capacity from allocated source space. The helper preserves
+sparse files during the root copy and checks available space after formatting,
+but source growth, inode limits, filesystem differences, or storage problems can
+still cause a failure. Copy errors include destination free bytes and free inodes
+when available. Podman errors that follow describe attempts to restore readers;
+they do not replace the original copy error.
+
+On the Pi, collect the layout, source usage, and clone service log:
+
+```sh
+lsblk -b -o NAME,SIZE,FSTYPE,MOUNTPOINTS
+df -h / /boot/firmware
+df -i / /boot/firmware
+journalctl -u library-clone.service -b
+```
+
+Keep the failed destination out of normal boot use. Before removing it, confirm
+that none of its partitions remain mounted. Update the host helper before
+retrying; a larger destination may be needed if the new capacity check rejects it.
+
 ## API and testing
 
 `GET /api/state` includes `clone.available`, `clone.status`, `clone.message`,
@@ -189,7 +231,9 @@ lines with `status`, `scan`, or `start` actions. It returns
 interrupted during this boot.
 
 Run the downloader Python suite and JavaScript UI tests. Hardware commands in
-clone tests are mocked; they never format a real disk. Pi acceptance testing:
+clone tests are mocked; they never format a real disk. A local rsync regression
+test uses temporary files to verify sparse allocation, hard links, and symlinks.
+Pi acceptance testing:
 verify protected/mounted disks are absent, reject an undersized destination,
 clone 100 GB from a larger USB to a 128 GB stick, wait for the safe-removal prompt,
 and confirm that the Library does not reboot until the destination is unplugged.

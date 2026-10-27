@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """Host-only clone bridge. Never run in the downloader container.
-
+V1.3
 Fixed JSON actions over a root-only systemd socket; no caller-supplied commands.
 All destructive work is confined to a recently inspected, unused USB disk.
 """
@@ -75,6 +75,26 @@ def mounted_device(path, disks):
 def used(path):
     usage = os.statvfs(path)
     return (usage.f_blocks - usage.f_bfree) * usage.f_frsize
+
+
+def check_copy_capacity(path, required, filesystem):
+    """Check actual writable space after formatting, not just raw disk size."""
+    usage = os.statvfs(path)
+    available = usage.f_bavail * usage.f_frsize
+    if available < required:
+        raise ValueError(f'{filesystem} destination has only {available / MIB:.1f} MiB available '
+                         f'after formatting; at least {required / MIB:.1f} MiB is needed. '
+                         'Use a larger destination or free space on the source and scan again.')
+
+
+def copy_root(source, destination, update):
+    # Space estimates use allocated blocks. Preserve sparse files so holes do
+    # not expand into allocated zero-filled blocks on the new ext4 filesystem.
+    args = ['-aHAXx', '--sparse', '--numeric-ids', '--exclude=/Library/*',
+            '--exclude=/dev/*', '--exclude=/proc/*', '--exclude=/sys/*',
+            '--exclude=/run/*', '--exclude=/tmp/*', '--exclude=/mnt/*',
+            '--exclude=/media/*', '--exclude=/lost+found', source, str(destination) + '/']
+    copy_files(args, update)
 
 
 def identity(disk):
@@ -221,6 +241,15 @@ def partition(disk, number):
     return disk + ('p' if disk[-1].isdigit() else '') + str(number)
 
 
+def sd_partition_layout(boot_size):
+    # Without an explicit second start, sfdisk can put root in the free 1–8 MiB
+    # gap before boot. Root must begin after boot and fill the remaining disk.
+    boot_mib = boot_size // MIB
+    return (f'label: dos\nlabel-id: 0x{secrets.token_hex(4)}\n'
+            f'start=8MiB, size={boot_mib}MiB, type=c\n'
+            f'start={8 + boot_mib}MiB, type=83\n')
+
+
 def rewrite_boot(root, source, root_part, boot_part):
     """Fresh UUIDs avoid collisions while source and clone are both attached."""
     ids = {}
@@ -360,7 +389,7 @@ class Cloner:
             disk = target['device']
             self.update(phase='formatting', message='Partitioning and formatting destination…')
             if info['kind'] == 'sd':
-                layout = f'label: dos\nlabel-id: 0x{secrets.token_hex(4)}\nstart=8MiB, size={info["boot_size"] // MIB}MiB, type=c\ntype=83\n'
+                layout = sd_partition_layout(info['boot_size'])
             else:
                 layout = 'label: gpt\nstart=8MiB, type=EBD0A0A2-B9E5-4433-87C0-68B6B72699C7\n'
             run('sfdisk', '--wipe', 'always', '--wipe-partitions', 'always', disk, input=layout)
@@ -382,17 +411,15 @@ class Cloner:
             run('mount', last, str(scratch))
             mounts.append(scratch)
             if info['kind'] == 'sd':
+                check_copy_capacity(scratch, info['root_used'], 'SD root')
                 self.update(phase='copying_root', copied=0, copy_total=info['root_used'],
                             message='Copying SD root filesystem…')
-                args = ['-aHAXx', '--numeric-ids', '--exclude=/Library/*',
-                        '--exclude=/dev/*', '--exclude=/proc/*', '--exclude=/sys/*',
-                        '--exclude=/run/*', '--exclude=/tmp/*', '--exclude=/mnt/*',
-                        '--exclude=/media/*', '--exclude=/lost+found', '/', str(scratch) + '/']
-                copy_files(args, self.update)
+                copy_root('/', scratch, self.update)
                 boot = scratch / 'boot/firmware'
                 boot.mkdir(parents=True, exist_ok=True)
                 run('mount', first, str(boot))
                 mounts.append(boot)
+                check_copy_capacity(boot, info['boot_used'], 'SD boot')
                 self.update(phase='copying_boot', copied=0, copy_total=info['boot_used'],
                             message='Copying SD boot files…')
                 copy_files(['-rtx', '--modify-window=2', '/boot/firmware/', str(boot) + '/'], self.update)
@@ -401,6 +428,7 @@ class Cloner:
                     (scratch / name).mkdir(exist_ok=True)
                 (scratch / 'tmp').chmod(0o1777)
             else:
+                check_copy_capacity(scratch, info['used'], 'Library_USB')
                 self.update(phase='copying_usb', copied=0, copy_total=info['used'],
                             message='Copying Library_USB files… This can take several hours.')
                 copy_files(['-rtx', '--modify-window=2', '/Library/', str(scratch) + '/'], self.update)
@@ -408,6 +436,15 @@ class Cloner:
             os.sync()
         except Exception as exc:
             error = str(exc)
+            # Keep capacity evidence before cleanup unmounts the destination.
+            if mounts and self.status().get('phase', '').startswith('copying_'):
+                try:
+                    usage = os.statvfs(mounts[-1])
+                    error += (f' Destination filesystem: {usage.f_bavail * usage.f_frsize / MIB:.1f} MiB free '
+                              f'of {usage.f_blocks * usage.f_frsize / MIB:.1f} MiB; '
+                              f'{usage.f_favail} free inodes.')
+                except OSError:
+                    pass  # Retain the original copy failure if the device vanished.
         finally:
             cleanup_errors = []
             if error:

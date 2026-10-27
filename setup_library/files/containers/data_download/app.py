@@ -403,8 +403,8 @@ class Application:
             if self.restart_requested:
                 raise ValueError("The Library is restarting")
             if action == "start":
-                if self.upload_active or self.refreshing or any(job["status"] in ACTIVE for job in self.jobs.values()):
-                    raise ValueError("Wait for uploads, downloads and source refresh to finish before cloning")
+                if self.upload_active or any(job["status"] in ACTIVE for job in self.jobs.values()):
+                    raise ValueError("Wait for uploads and downloads to finish before cloning")
                 return clone_request("start", token=body.get("token"), confirmation=body.get("confirmation"),
                                      sd_confirmed=body.get("sd_confirmed", False))
             return clone_request("scan", source=body.get("source"))
@@ -530,9 +530,13 @@ class Application:
         for thread in threads:
             thread.join()
         try:
-            cache = self.storage.path(".data_download/catalog.json")
-            cache.parent.mkdir(exist_ok=True)
             with self.lock:
+                # Discovery only reads network metadata and updates memory. It
+                # need not delay cloning, but its final disk write must share
+                # clone admission's lock and recheck the host before any writes.
+                check_clone_idle()
+                cache = self.storage.path(".data_download/catalog.json")
+                cache.parent.mkdir(exist_ok=True)
                 atomic_json(cache, list(self.catalog.values()))
         except (OSError, ValueError) as exc:
             logging.warning("Catalog cache: %s", exc)

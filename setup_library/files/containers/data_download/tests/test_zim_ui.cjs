@@ -125,6 +125,22 @@ test('Clone controls explain missing host support and disable starting during tr
     cloneScan={source:{device:'/dev/sda1',used:100,required:200},targets:[{device:'/dev/sdb',model:'USB',size:300,fits:true}]}; renderClone();`);
   assert.equal(u.nodes.get('clone-targets').children[0].children.at(-1).disabled, true);
   assert.match(u.nodes.get('clone-status').textContent, /Wait for transfers/);
+  assert.equal(u.nodes.get('clone-targets').children[0].children.at(-1).textContent, 'Waiting for transfers…');
+});
+
+test('Unknown SD media can be confirmed immediately while catalog discovery is running', () => {
+  const u = ui();
+  u.run(`state.clone={available:true,status:'idle'}; state.refreshing=true;
+    cloneScan={source:{kind:'sd',device:'/dev/mmcblk0',used:100,required:200},targets:[
+      {device:'/dev/sdb',model:'Reader',size:300,fits:true,eligible:true,media:'unknown',requires_sd_confirmation:true}]};
+    renderClone();`);
+  let button = u.nodes.get('clone-targets').children[0].children.at(-1);
+  assert.equal(Boolean(button.disabled), false);
+  assert.equal(button.textContent, 'Erase and clone…');
+  u.run(`state.clone.status='unknown'; renderClone();`);
+  button = u.nodes.get('clone-targets').children[0].children.at(-1);
+  assert.equal(button.disabled, true);
+  assert.equal(button.textContent, 'Waiting for clone service…');
 });
 
 

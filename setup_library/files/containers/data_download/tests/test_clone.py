@@ -2,7 +2,10 @@
 import copy
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -205,7 +208,7 @@ class MediaTests(unittest.TestCase):
 
 class WorkerTests(unittest.TestCase):
     def test_copy_layout_cleanup_and_reader_recovery(self):
-        for kind, fails in [('usb', False), ('sd', False), ('usb', 'copy'), ('usb', 'unmount'), ('usb', 'sync')]:
+        for kind, fails in [('usb', False), ('sd', False), ('usb', 'copy'), ('usb', 'unmount'), ('usb', 'sync'), ('sd', 'capacity')]:
             with self.subTest(kind=kind, fails=fails), tempfile.TemporaryDirectory() as tmp:
                 scratch = Path(tmp) / 'mount'
                 scratch.mkdir()
@@ -241,6 +244,8 @@ class WorkerTests(unittest.TestCase):
                      patch.object(host.Path, 'exists', return_value=True), \
                      patch.object(host.Path, 'rmdir'), \
                      patch.object(host.os, 'sync', side_effect=OSError('sync broke') if fails == 'sync' else None), \
+                     patch.object(host, 'check_copy_capacity', wraps=host.check_copy_capacity,
+                                  side_effect=ValueError('SD root destination too small') if fails == 'capacity' else None), \
                      patch.object(cloner, 'restart_after_removal', side_effect=finish) as restart, \
                      patch.object(host, 'rewrite_boot') as rewrite, \
                      patch.object(host, 'copy_files', side_effect=copying) as cp:
@@ -257,6 +262,14 @@ class WorkerTests(unittest.TestCase):
                 self.assertIn(('umount', str(scratch)), args)
                 self.assertEqual(cloner.status()['status'], 'failed' if fails else 'running')
                 layout = next(kwargs['input'] for cmd, kwargs in commands if cmd[0] == 'sfdisk')
+                if fails == 'capacity':
+                    cp.assert_not_called()
+                    rewrite.assert_not_called()
+                    self.assertIn('SD root destination too small', cloner.status()['message'])
+                    continue
+                if fails == 'copy':
+                    self.assertIn('Destination filesystem:', cloner.status()['message'])
+                    self.assertIn('free inodes', cloner.status()['message'])
                 if kind == 'sd':
                     self.assertEqual([(p['phase'], p['copied'], p['copy_total']) for p in phases],
                                      [('copying_root', 0, 1000), ('copying_boot', 0, 100)])
@@ -355,6 +368,62 @@ class CopyProgressTests(unittest.TestCase):
         update.assert_called_once_with(copied=1024)
 
 
+class CopyCapacityTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('sfdisk'), 'sfdisk is needed for the partition-layout regression test')
+    def test_sd_root_starts_after_boot_and_uses_remaining_image_space(self):
+        # Partition only a disposable sparse regular file, never a block device.
+        with tempfile.TemporaryDirectory() as tmp:
+            image = Path(tmp) / 'card.img'
+            for boot_mib in (512, 768):
+                with self.subTest(boot_mib=boot_mib):
+                    with image.open('wb') as stream:
+                        stream.truncate(2 * GIB)
+                    subprocess.run(['sfdisk', '--no-reread', '--no-tell-kernel', str(image)],
+                                   input=host.sd_partition_layout(boot_mib * host.MIB),
+                                   text=True, capture_output=True, check=True)
+                    table = json.loads(subprocess.check_output(['sfdisk', '--json', str(image)]))['partitiontable']
+                    boot, root = table['partitions']
+                    sector = table['sectorsize']
+                    self.assertEqual(boot['start'] * sector, 8 * host.MIB)
+                    self.assertEqual(boot['size'] * sector, boot_mib * host.MIB)
+                    self.assertEqual(root['start'], boot['start'] + boot['size'])
+                    self.assertEqual((root['start'] + root['size']) * sector, 2 * GIB)
+                    self.assertEqual(root['type'], '83')
+
+    def test_post_format_check_uses_available_filesystem_space(self):
+        usage = MagicMock(f_bavail=100, f_bfree=200, f_blocks=1000, f_frsize=host.MIB)
+        with patch.object(host.os, 'statvfs', return_value=usage):
+            host.check_copy_capacity('/destination', 100 * host.MIB, 'SD root')
+            with self.assertRaisesRegex(ValueError, 'SD root destination has only 100.0 MiB.*after formatting'):
+                host.check_copy_capacity('/destination', 101 * host.MIB, 'SD root')
+
+    @unittest.skipUnless(shutil.which('rsync'), 'rsync is needed for the local file-copy regression test')
+    def test_root_copy_preserves_sparse_data_hardlinks_and_symlinks(self):
+        # Ordinary temporary directories only: no disks, mounts, or root access.
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'source'
+            destination = Path(tmp) / 'destination'
+            source.mkdir(); destination.mkdir()
+            sparse = source / 'sparse.img'
+            with sparse.open('wb') as stream:
+                stream.write(b'header')
+                stream.seek(16 * host.MIB)
+                stream.write(b'trailer')
+            if sparse.stat().st_blocks * 512 >= sparse.stat().st_size // 2:
+                self.skipTest('Temporary filesystem does not support sparse allocation')
+            os.link(sparse, source / 'hardlink.img')
+            (source / 'symlink.img').symlink_to('sparse.img')
+            (source / 'Library').mkdir()
+            (source / 'Library' / 'content').write_text('separate content drive')
+            host.copy_root(str(source) + '/', destination, MagicMock())
+            copied = destination / 'sparse.img'
+            self.assertEqual(copied.read_bytes(), sparse.read_bytes())
+            self.assertLess(copied.stat().st_blocks * 512, copied.stat().st_size // 2)
+            self.assertEqual(copied.stat().st_ino, (destination / 'hardlink.img').stat().st_ino)
+            self.assertEqual(os.readlink(destination / 'symlink.img'), 'sparse.img')
+            self.assertFalse((destination / 'Library' / 'content').exists())
+
+
 class AppCloneTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -372,21 +441,38 @@ class AppCloneTests(unittest.TestCase):
             self.assertFalse(self.app.refreshing)
             restart.assert_not_called()
 
-    def test_upload_jobs_and_refresh_block_clone_admission(self):
+    def test_upload_jobs_block_clone_but_catalog_refresh_does_not(self):
         with patch.object(app, 'clone_status', return_value={'status': 'idle'}), patch.object(app, 'clone_request') as request:
             for status in app.ACTIVE:
                 self.app.jobs = {'test': {'status': status}}
                 with self.assertRaisesRegex(ValueError, 'Wait for'):
                     self.app.clone('start', {})
             self.app.jobs = {}
-            for attr in ('upload_active', 'refreshing'):
+            for attr in ('upload_active',):
                 setattr(self.app, attr, True)
                 with self.assertRaisesRegex(ValueError, 'Wait for'):
                     self.app.clone('start', {})
                 setattr(self.app, attr, False)
             request.assert_not_called()
+            self.app.refreshing = True
             self.app.clone('start', {'token': 't', 'confirmation': '/dev/sdb'})
             request.assert_called_once_with('start', token='t', confirmation='/dev/sdb', sd_confirmed=False)
+
+    def test_catalog_discovery_never_writes_cache_during_clone_or_unknown_status(self):
+        for status in ('running', 'unknown', 'idle'):
+            with self.subTest(status=status), \
+                 patch.object(app, 'clone_status', return_value={'status': status}), \
+                 patch.object(app.sources, 'discover', return_value='No results'), \
+                 patch.object(self.app.storage, 'path', return_value=Path(self.tmp.name) / 'catalog.json') as path, \
+                 patch.object(app, 'atomic_json') as save:
+                self.app.refreshing = True
+                self.app.refresh_all()
+                self.assertFalse(self.app.refreshing)
+                if status == 'idle':
+                    save.assert_called_once()
+                else:
+                    path.assert_not_called()
+                    save.assert_not_called()
 
     def test_unknown_service_state_fails_closed_but_absent_service_allows_downloads(self):
         with patch.object(app, 'clone_status', return_value={'status': 'unknown'}):
