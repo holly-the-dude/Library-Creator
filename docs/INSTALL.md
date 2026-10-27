@@ -293,6 +293,34 @@ formatting rules apply as for **`1) Fresh Install`**.
 
 ## Troubleshooting
 
+### Startup: the main QR-code page does not appear
+
+If the Library's main QR-code page does not appear after startup, connect to the
+Pi over SSH using your account and the Pi's IP address, then become root:
+
+```bash
+ssh your-user@your-pi-ip
+sudo -i
+```
+
+Replace `your-user` and `your-pi-ip` with your SSH username and the Pi's IP address.
+View the Library startup service logs to find where startup stopped or failed:
+
+```bash
+journalctl -u start_library
+```
+
+If the boot process is still running, follow the logs as new messages arrive:
+
+```bash
+journalctl -u start_library -f
+```
+
+Press **q** to leave the log viewer, or **Ctrl+C** to stop following live logs.
+This only closes the log view; it does not stop the Library startup process.
+
+### Other installation issues
+
 **The installer didn't resume after a reboot.**
 Check that the resume cron entry exists:
 

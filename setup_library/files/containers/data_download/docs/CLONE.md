@@ -52,24 +52,38 @@ the existing startup-time cloning block remains unchanged.
 
 Finish uploads, queued downloads, extraction, and catalog refresh first.
 During cloning, the downloader blocks new writes, refresh, routing changes,
-and its Restart button. Other running Podman containers stop and restart
-afterward, except the downloader and hotspot (which keep the browser connected).
+and its Restart button. Other running Podman containers stop for the copy,
+except the downloader and hotspot (which keep the browser connected).
 The Library readers will be temporarily unavailable. Avoid manual changes,
 other power controls, container restarts, or unplugging either drive during a
 clone. You may close/reopen the browser; the host continues copying.
 
-The yellow-orange progress bar counts containers as they stop and restart.
+The yellow-orange progress bar counts containers as they stop.
 While copying, it highlights bytes copied and an estimated percentage based on
 used space for that filesystem: USB content, SD root, or SD boot. SD progress
 resets for the boot-files stage. Used space includes filesystem metadata and
 allocation overhead, so this estimate can differ from the final copied bytes.
-Formatting and final writes show an indeterminate bar; the page reports the
-clone complete only after cleanup and reader restart succeed.
-On success, the destination
-has been synced and unmounted. **Remove the clone before restarting**: the USB
-copy deliberately has the same `Library_USB` label. Failed copies must not be
+Formatting and final writes show an indeterminate bar. After the copy is synced
+and the destination is successfully unmounted, the page shows **Copy complete**,
+100%, and a message that the destination is safely ejected.
+
+**Unplug only the destination when prompted. Leave the original drive connected.**
+The host waits for destination removal, then automatically restarts the Library.
+Keep power connected and reload the page when the Library is back online.
+Readers start during normal boot; the clone helper does not restart individual
+containers after a successful copy. This applies to both USB and SD clones.
+Unmounting alone does not prevent the copied `Library_USB` label from being
+detected on the next boot, so physical removal is required before the reboot.
+
+A failed copy or unmount never triggers an automatic reboot. The helper attempts
+to restore stopped readers and reports the failure. Failed copies must not be
 used as finished clones. If cleanup failed or power was lost, check mounts and
-host logs before removal and restart any readers that remained stopped.
+host logs before removal. If copying and unmounting succeeded but the reboot
+request failed, the page asks for a manual restart and keeps new writes blocked.
+Remove the destination first, then SSH into the Pi and run `sudo systemctl reboot`.
+The same manual recovery applies if the clone helper is restarted while waiting
+for removal. The normal Library restart helper is not used for this completion
+flow, because it issues additional Podman commands.
 
 ## Supported layouts
 
@@ -151,7 +165,12 @@ eligible spare drive after confirmation.
 `GET /api/state` includes `clone.available`, `clone.status`, `clone.message`,
 and, while working, the source, destination, `phase`, and `copied` byte count.
 Copy phases include `copy_total` (estimated used bytes for that filesystem).
-Stopping/restarting phases include `containers_done` and `containers_total`.
+Stopping and failure-recovery restarting phases include `containers_done` and
+`containers_total`. Successful copying and unmounting set `copy_complete: true`.
+The subsequent phases are `awaiting_removal`, `rebooting`, or `reboot_failed`.
+These retain `status: "running"` to block conflicting actions until the host
+reboots, including when a manual restart is needed. Status is stored under
+`/run` and resets on reboot; it is not a permanent clone history.
 `POST /api/clone/scan` takes `{"source":"sd"}` or `{"source":"usb"}` and returns
 source used/required bytes and targets with `fits`, `media`, `eligible`, and
 `blocked_reason`. Unknown OS destinations also have `requires_sd_confirmation`
@@ -172,9 +191,12 @@ interrupted during this boot.
 Run the downloader Python suite and JavaScript UI tests. Hardware commands in
 clone tests are mocked; they never format a real disk. Pi acceptance testing:
 verify protected/mounted disks are absent, reject an undersized destination,
-clone 100 GB from a larger USB to a 128 GB stick, compare files, safely remove
-it, and test it on the Pi. Repeat with a smaller SD destination, verify it boots
-with its separate Library_USB, and check a failed copy restores stopped readers.
+clone 100 GB from a larger USB to a 128 GB stick, wait for the safe-removal prompt,
+and confirm that the Library does not reboot until the destination is unplugged.
+Check that it then boots with the original drive, and compare the clone's files
+on another computer. Repeat with a smaller SD destination, verify it boots
+with its separate Library_USB, and check a failed copy restores stopped readers
+without rebooting. Also test unmount and reboot-request failures.
 
 ```sh
 journalctl -u library-clone.service -b

@@ -343,11 +343,15 @@ async function poll() {
     const includeCatalog = pollNumber++ % 5 === 0 || state.refreshing;
     const fresh = await api(includeCatalog ? "/api/catalog" : "/api/state");
     if (state.restart?.requested) return;
+    if (state.clone?.phase === "rebooting") notice();
     state = {...state, ...fresh};
     selected = new Set([...selected].filter(id => state.catalog.some(row => row.id === id && eligible(row))));
     renderInternet(); renderStorage(); renderSources(); renderFiles(); renderJobs(); renderRouting(); renderUpload(); renderClone();
     showRestartReminder();
-  } catch (error) { if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message); }
+  } catch (error) {
+    if (state.clone?.phase === "rebooting") notice("The Library is restarting. Keep power connected and reload this page when it is back online.");
+    else if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message);
+  }
   setTimeout(poll, 2500);
 }
 // Submit catalog IDs; the backend owns the download queue and source URLs.
@@ -359,7 +363,8 @@ function uploadCategory() { return document.querySelector('[name="upload-categor
 /**
  * Show progress for the current host-reported stage, not an overall ETA.
  * Container stages count containers; copying stages estimate bytes per
- * filesystem (SD root and boot are separate). Only host completion means 100%.
+ * filesystem (SD root and boot are separate). Copy completion means 100%; the
+ * host still waits for destination removal before rebooting the Library.
  * Older helpers without phase/total fields can still show copied-byte text.
  */
 function renderCloneProgress(info) {
@@ -370,7 +375,12 @@ function renderCloneProgress(info) {
   label.textContent = "Working…";
   bar.setAttribute("aria-label", info.message || "Clone progress");
   if (panel.hidden) return;
-  if (info.status === "complete") {
+  if (info.copy_complete) {
+    bar.value = 100;
+    label.textContent = info.phase === "awaiting_removal" ? "Copy complete · 100% · Unplug the destination to restart"
+      : info.phase === "reboot_failed" ? "Copy complete · 100% · Manual restart needed"
+      : "Copy complete · 100% · Restarting the Library…";
+  } else if (info.status === "complete") {
     bar.value = 100;
     label.textContent = "Clone complete · 100%";
   } else if (["stopping", "restarting"].includes(info.phase)) {
@@ -382,7 +392,7 @@ function renderCloneProgress(info) {
   } else if (info.phase?.startsWith("copying_") || (!info.phase && info.copied != null)) {
     const copied = info.copied || 0, total = info.copy_total;
     // Used space includes allocation/metadata and may differ from rsync bytes.
-    // Show an estimate per filesystem; completion waits for flush and cleanup.
+    // Show an estimate per filesystem; copy completion waits for flush and cleanup.
     if (total > 0) {
       const percent = Math.min(99, Math.max(0, Math.floor(copied / total * 100)));
       bar.value = percent;

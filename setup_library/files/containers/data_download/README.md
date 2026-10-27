@@ -62,6 +62,10 @@ plus filesystem overhead**. For example, 100 GB of content on a 512 GB source
 can fit on a 128 GB stick. The page checks capacity and requires confirmation
 before erasing the destination. Current system/content drives are protected.
 
+After copying, the destination is flushed and safely unmounted. When prompted,
+unplug only the destination; the Library then restarts automatically, bringing
+its readers back during boot. Leave the original drive and power connected.
+
 Cloning works offline and requires the optional host clone service. See
 [Clone setup and usage](docs/CLONE.md) for installation, supported layouts,
 progress, and testing. The existing startup cloning code is retained.

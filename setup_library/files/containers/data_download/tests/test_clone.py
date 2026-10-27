@@ -205,7 +205,7 @@ class MediaTests(unittest.TestCase):
 
 class WorkerTests(unittest.TestCase):
     def test_copy_layout_cleanup_and_reader_recovery(self):
-        for kind, fails in [('usb', False), ('sd', False), ('usb', True)]:
+        for kind, fails in [('usb', False), ('sd', False), ('usb', 'copy'), ('usb', 'unmount'), ('usb', 'sync')]:
             with self.subTest(kind=kind, fails=fails), tempfile.TemporaryDirectory() as tmp:
                 scratch = Path(tmp) / 'mount'
                 scratch.mkdir()
@@ -216,7 +216,7 @@ class WorkerTests(unittest.TestCase):
                 phases = []
                 def copying(args, update):
                     phases.append(cloner.status())
-                    if fails:
+                    if fails == 'copy':
                         raise ValueError("copy broke")
                     update(copied=cloner.status()["copy_total"])
                 def command(*args, **kwargs):
@@ -229,19 +229,33 @@ class WorkerTests(unittest.TestCase):
                         self.assertEqual(cloner.status()['phase'], 'restarting')
                     if args[:2] == ('podman', 'ps'):
                         return json.dumps([{'Id': 'reader', 'Names': ['wiki'], 'Image': 'wiki'}])
+                    if args[0] == 'umount' and fails == 'unmount':
+                        raise ValueError('unmount broke')
                     return ''
+                def finish(device):
+                    self.assertIn((('umount', str(scratch)), {'timeout': 120}), commands)
+                    cloner.update(status='running', phase='awaiting_removal', copy_complete=True)
                 with patch.object(host, 'run', side_effect=command), \
                      patch.object(cloner, 'revalidate', return_value=info), \
                      patch.object(host.tempfile, 'mkdtemp', return_value=str(scratch)), \
                      patch.object(host.Path, 'exists', return_value=True), \
-                     patch.object(host.Path, 'rmdir'), patch.object(host.os, 'sync'), \
+                     patch.object(host.Path, 'rmdir'), \
+                     patch.object(host.os, 'sync', side_effect=OSError('sync broke') if fails == 'sync' else None), \
+                     patch.object(cloner, 'restart_after_removal', side_effect=finish) as restart, \
                      patch.object(host, 'rewrite_boot') as rewrite, \
                      patch.object(host, 'copy_files', side_effect=copying) as cp:
                     cloner.worker(info, {'device': '/dev/sdb'})
                 args = [entry[0] for entry in commands]
-                self.assertIn(('podman', 'start', 'reader'), args)
+                if fails:
+                    self.assertIn(('podman', 'start', 'reader'), args)
+                    restart.assert_not_called()
+                    self.assertNotIn('copy_complete', cloner.status())
+                else:
+                    self.assertNotIn(('podman', 'start', 'reader'), args)
+                    restart.assert_called_once_with('/dev/sdb')
+                    self.assertTrue(cloner.status()['copy_complete'])
                 self.assertIn(('umount', str(scratch)), args)
-                self.assertEqual(cloner.status()['status'], 'failed' if fails else 'complete')
+                self.assertEqual(cloner.status()['status'], 'failed' if fails else 'running')
                 layout = next(kwargs['input'] for cmd, kwargs in commands if cmd[0] == 'sfdisk')
                 if kind == 'sd':
                     self.assertEqual([(p['phase'], p['copied'], p['copy_total']) for p in phases],
@@ -268,6 +282,54 @@ class WorkerTests(unittest.TestCase):
             cloner = host.Cloner(state)
             self.assertEqual(cloner.status()['status'], 'failed')
             self.assertIn('interrupted', cloner.status()['message'])
+
+    def test_success_waits_for_physical_removal_then_reboots_without_podman(self):
+        cloner = host.Cloner()
+        def waiting(seconds):
+            if seconds == 2:
+                self.assertEqual(cloner.status()['phase'], 'awaiting_removal')
+                self.assertTrue(cloner.status()['copy_complete'])
+                commands.assert_not_called()
+                with self.assertRaisesRegex(ValueError, 'already running'):
+                    cloner.scan('usb')
+            else:
+                self.assertEqual(seconds, 3)
+                self.assertEqual(cloner.status()['phase'], 'rebooting')
+        with patch.object(host.Path, 'stat', side_effect=[MagicMock(), MagicMock(), FileNotFoundError()]) as stat, \
+             patch.object(host.time, 'sleep', side_effect=waiting) as sleep, \
+             patch.object(host, 'run') as commands:
+            cloner.restart_after_removal('/dev/sdb')
+        self.assertEqual(stat.call_count, 3)
+        self.assertEqual([c.args for c in sleep.call_args_list], [(2,), (2,), (3,)])
+        commands.assert_called_once_with('systemctl', 'reboot', '--no-block')
+        self.assertEqual(cloner.status()['status'], 'running')
+
+    def test_removal_check_error_never_reboots_and_reboot_error_keeps_writes_blocked(self):
+        for error in [PermissionError('cannot inspect device'), FileNotFoundError()]:
+            with self.subTest(error=type(error).__name__):
+                cloner = host.Cloner()
+                with patch.object(host.Path, 'stat', side_effect=error), \
+                     patch.object(host.time, 'sleep'), \
+                     patch.object(host, 'run', side_effect=ValueError('reboot rejected')) as commands:
+                    cloner.restart_after_removal('/dev/sdb')
+                if isinstance(error, PermissionError):
+                    commands.assert_not_called()
+                else:
+                    commands.assert_called_once()
+                self.assertEqual(cloner.status()['phase'], 'reboot_failed')
+                self.assertEqual(cloner.status()['status'], 'running')
+                self.assertTrue(cloner.status()['copy_complete'])
+                self.assertIn('restart the Library manually', cloner.status()['message'])
+
+    def test_helper_restart_after_copy_keeps_writes_blocked_until_manual_reboot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / 'status.json'
+            state.write_text(json.dumps({'status': 'running', 'copy_complete': True,
+                                         'phase': 'awaiting_removal', 'destination': '/dev/sdb'}))
+            cloner = host.Cloner(state)
+            self.assertEqual(cloner.status()['status'], 'running')
+            self.assertEqual(cloner.status()['phase'], 'reboot_failed')
+            self.assertIn('Remove the destination', cloner.status()['message'])
 
 
 class CopyProgressTests(unittest.TestCase):

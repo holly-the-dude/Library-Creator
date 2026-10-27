@@ -204,6 +204,9 @@ Ultrasonic can connect:
 - **Server URL:** `http://10.1.1.1:9099`
 - **Username:** `music`
 - **Password:** `music`
+Or the ipod like interface
+- **Server URL:** `http://10.1.1.1:2001`
+
 
 ---
 

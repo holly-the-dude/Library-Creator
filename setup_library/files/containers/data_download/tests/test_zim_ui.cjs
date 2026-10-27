@@ -147,7 +147,7 @@ test('Clone progress counts containers and estimates USB and SD copy stages', ()
   assert.equal(u.nodes.get('clone-progress').value, undefined);
 });
 
-test('Clone progress waits for cleanup and reader restart before announcing completion', () => {
+test('Clone progress waits for cleanup and supports older helpers that restart readers', () => {
   const u = ui();
   for (const phase of ['preparing', 'formatting', 'finalizing']) {
     u.run(`state.clone={status:'running',phase:'${phase}',copied:1000}; renderClone();`);
@@ -163,6 +163,19 @@ test('Clone progress waits for cleanup and reader restart before announcing comp
   for (const status of ['idle', 'failed', 'unavailable']) {
     u.run(`state.clone.status='${status}'; renderClone();`);
     assert.equal(u.nodes.get('clone-progress-panel').hidden, true);
+  }
+});
+
+test('Successful clones show removal and reboot instructions while keeping controls blocked', () => {
+  const u = ui();
+  for (const [phase, text] of [['awaiting_removal', /Unplug the destination/],
+      ['rebooting', /Restarting the Library/], ['reboot_failed', /Manual restart needed/]]) {
+    u.run(`state.clone={available:true,status:'running',copy_complete:true,phase:'${phase}'}; renderClone();`);
+    assert.equal(u.nodes.get('clone-progress').value, 100);
+    assert.match(u.nodes.get('clone-progress-text').textContent, text);
+    assert.equal(u.nodes.get('clone-scan').disabled, true);
+    assert.equal(u.nodes.get('clone-source').disabled, true);
+    assert.equal(u.run('cloning()'), true);
   }
 });
 

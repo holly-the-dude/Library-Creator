@@ -20,7 +20,7 @@ import time
 
 MIB = 1024 ** 2
 TOOLS = ('lsblk', 'findmnt', 'sfdisk', 'udevadm', 'mkfs.vfat', 'mkfs.ext4',
-         'mkfs.exfat', 'mount', 'umount', 'rsync', 'blkid', 'podman')
+         'mkfs.exfat', 'mount', 'umount', 'rsync', 'blkid', 'podman', 'systemctl')
 
 
 def run(*args, input=None, timeout=60):
@@ -261,7 +261,10 @@ class Cloner:
             try:
                 self.state = json.loads(self.state_path.read_text())
                 if self.state['status'] == 'running':
-                    self.state.update(status='failed', message='Clone interrupted. Check destination mounts and restart stopped Library readers before retrying.')
+                    if self.state.get('copy_complete'):
+                        self.state.update(phase='reboot_failed', message='Clone was safely unmounted, but automatic restart was interrupted. Remove the destination and restart the Library manually.')
+                    else:
+                        self.state.update(status='failed', message='Clone interrupted. Check destination mounts and restart stopped Library readers before retrying.')
             except (OSError, ValueError, KeyError):
                 self.state = {'status': 'failed', 'message': 'Previous clone status could not be read. Check host logs.'}
 
@@ -419,21 +422,49 @@ class Cloner:
                     scratch.rmdir()
                 except OSError as exc:
                     cleanup_errors.append(str(exc))
-            self.update(phase='restarting', containers_done=0, containers_total=len(stopped),
-                        message='Restarting Library containers…')
-            restarted = 0
-            for cid in stopped:
-                try:
-                    run('podman', 'start', cid, timeout=120)
-                    restarted += 1
-                    self.update(containers_done=restarted)
-                except Exception as exc:
-                    cleanup_errors.append(str(exc))
             if error or cleanup_errors:
+                # A failed copy must not trigger a reboot. Try to restore readers
+                # so the Library remains usable while the failure is investigated.
+                self.update(phase='restarting', containers_done=0, containers_total=len(stopped),
+                            message='Restoring Library containers after clone failure…')
+                restarted = 0
+                for cid in stopped:
+                    try:
+                        run('podman', 'start', cid, timeout=120)
+                        restarted += 1
+                        self.update(containers_done=restarted)
+                    except Exception as exc:
+                        cleanup_errors.append(str(exc))
                 self.update(status='failed', phase='failed', message='; '.join(filter(None, [error] + cleanup_errors)) +
                             ' Clone is not confirmed complete. Check host logs/mounts before removing it.')
-            else:
-                self.update(status='complete', phase='complete', message='Clone complete. Remove the destination before restarting the Library.')
+        if not error and not cleanup_errors:
+            self.restart_after_removal(target['device'])
+
+    def restart_after_removal(self, device):
+        """Keep writes blocked until the safely unmounted clone is unplugged.
+
+        Unmounting does not hide a duplicate Library_USB label at the next boot.
+        Require physical removal before asking systemd to reboot; normal boot
+        starts the readers again without issuing Podman starts in this process.
+        """
+        try:
+            self.update(status='running', phase='awaiting_removal', copy_complete=True,
+                        message=f'Copy complete. {device} is safely ejected. Unplug the destination drive; the Library will restart automatically. Leave the original drive connected.')
+            device_path = Path('/sys/class/block') / Path(device).name
+            while True:
+                try:
+                    device_path.stat()
+                except FileNotFoundError:
+                    break
+                time.sleep(2)
+            self.update(phase='rebooting', message='Destination removed. Restarting the Library… Keep power connected and reload this page when it is back online.')
+            time.sleep(3)  # Give the browser a poll interval to display the message.
+            # The general Library restart helper calls Podman again. Successful
+            # clones instead use a normal systemd reboot, with no forced reboot.
+            run('systemctl', 'reboot', '--no-block')
+        except Exception as exc:
+            self.update(status='running', phase='reboot_failed',
+                        message=f'Copy complete and destination safely unmounted, but automatic restart failed: {exc}. Remove the destination if still connected and restart the Library manually.')
 
 
 class Handler(socketserver.StreamRequestHandler):
