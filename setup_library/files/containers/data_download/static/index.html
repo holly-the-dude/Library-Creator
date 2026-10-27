@@ -34,10 +34,10 @@
       </div>
       <section id="clone-panel" aria-label="Clone a drive" hidden>
         <h3>Make a copy of your Library</h3>
-        <p>Choose what to copy, then plug a spare SD card in a USB SD adapter, or a spare USB stick, into the Library Pi.</p>
+        <p>Choose what to copy. For the SD operating system, insert a spare SD card in a USB SD reader. For Library_USB content, insert a spare USB stick into the Library Pi.</p>
         <label>Copy from <select id="clone-source"><option value="sd">SD card (bootable system)</option><option value="usb">Library_USB (content drive)</option></select></label>
         <p>The destination only needs room for the used data plus filesystem overhead, even if the source drive is much larger. The SD copy does not include the separate Library_USB content drive.</p>
-        <p><strong>All data on the selected destination will be erased.</strong> Only unused, unmounted USB destinations are offered. The running SD card and Library_USB drive are protected.</p>
+        <p><strong>All data on the selected destination will be erased.</strong> Only unused, unmounted destinations are offered. OS clones require an SD card. Identified USB sticks and other media are blocked. If the reader cannot identify the card type, you must verify that the destination is an SD card and confirm that you are copying the operating system. The running SD card and Library_USB drive are protected.</p>
         <button id="clone-scan">Scan for destination</button>
         <p id="clone-capacity"></p>
         <div id="clone-targets"></div>
@@ -80,6 +80,18 @@
     <section class="panel" aria-labelledby="queue-title"><div class="section-heading"><h2 id="queue-title">Download queue</h2><span id="queue-count" class="badge">0 active</span></div><div id="jobs"><p>No downloads queued yet.</p></div></section>
     <footer>Internet access is needed on the Pi to discover and download files. Local uploads work offline. Saved content stays on your USB drive.<br>Keep the drive connected while uploads, downloads, or extraction are running.</footer>
   </main>
+  <dialog id="clone-confirm" aria-labelledby="clone-confirm-title" aria-describedby="clone-confirm-message">
+    <h2 id="clone-confirm-title">Erase and clone destination</h2>
+    <p id="clone-confirm-message"></p>
+    <form id="clone-confirm-form">
+      <label for="clone-confirm-input">Type <strong id="clone-confirm-device" class="clone-device"></strong> to confirm.</label>
+      <input id="clone-confirm-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" autofocus>
+      <div class="clone-confirm-actions">
+        <button id="clone-confirm-cancel" type="button" class="secondary">Cancel</button>
+        <button id="clone-confirm-submit" type="submit" disabled>Erase and clone</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="music-reminder" aria-labelledby="music-reminder-title" aria-describedby="music-reminder-message">
     <h2 id="music-reminder-title">Scan your uploaded music</h2>
     <p id="music-reminder-message">In the music player, click on the Gear icon on the right → Scanner → Scan Now → click on Albums and refresh the browser for your music to show up.</p>

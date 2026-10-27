@@ -118,6 +118,91 @@ class CloneSafetyTests(unittest.TestCase):
         self.assertEqual(self.cloner.status()['status'], 'failed')
 
 
+class MediaTests(unittest.TestCase):
+    def test_usb_reader_capability_name_and_removable_flag_do_not_prove_sd_media(self):
+        device = disk()
+        device.update(model='SD MMC Card Reader', rm=True)
+        for props in ('', 'ID_DRIVE_FLASH_SD=1\n', 'ID_DRIVE_FLASH_SD=1\nID_DRIVE_FLASH_MMC=1\n'):
+            with self.subTest(props=props), patch.object(host, 'run', return_value=props):
+                self.assertEqual(host.media_type(device), 'unknown')
+        with patch.object(host, 'run', side_effect=ValueError('udev unavailable')):
+            self.assertEqual(host.media_type(device), 'unknown')
+
+    def test_sd_family_media_is_recognized_but_other_media_and_conflicts_are_rejected(self):
+        for suffix in ('SD', 'SDHC', 'SDXC'):
+            with self.subTest(suffix=suffix), patch.object(host, 'run', return_value=f'ID_DRIVE_MEDIA_FLASH_{suffix}=1\n'):
+                self.assertEqual(host.media_type(disk()), 'sd')
+        for props in ('ID_DRIVE_THUMB=1\n', 'ID_DRIVE_MEDIA_FLASH_MMC=1\n',
+                      'ID_DRIVE_MEDIA_FLASH_SD=1\nID_DRIVE_MEDIA_FLASH_CF=1\n',
+                      'ID_DRIVE_MEDIA_FLASH_SD=1\nID_DRIVE_THUMB=1\n'):
+            with self.subTest(props=props), patch.object(host, 'run', return_value=props):
+                self.assertEqual(host.media_type(disk()), 'other')
+
+    def test_native_sd_is_supported_and_still_subject_to_mount_and_source_protection(self):
+        device = disk('/dev/mmcblk1')
+        device['tran'] = 'mmc'
+        with patch.object(Path, 'read_text', return_value='SD\n'), \
+             patch.object(Path, 'is_dir', return_value=True), \
+             patch.object(Path, 'iterdir', side_effect=lambda: iter(())), patch.object(host, 'run') as run:
+            self.assertEqual(host.media_type(device), 'sd')
+            self.assertTrue(host.target_ok(device, set(), 'sd'))
+            self.assertFalse(host.target_ok(device, {'/dev/mmcblk1'}, 'sd'))
+            self.assertFalse(host.target_ok(device, set(), 'usb'))
+            device['mountpoints'] = ['/data']
+            self.assertFalse(host.target_ok(device, set(), 'sd'))
+            run.assert_not_called()
+        with patch.object(Path, 'read_text', return_value='MMC\n'):
+            self.assertFalse(host.native_sd(device))
+
+    def test_os_scan_blocks_unknown_usb_and_revalidates_media_before_erasure(self):
+        source = {'kind': 'sd', 'device': '/dev/mmcblk0', 'identity': ['system'], 'used': GIB, 'required': 2 * GIB}
+        devices = [disk('/dev/sdb', **{'log-sec': 512}), disk('/dev/sdc', **{'log-sec': 512}),
+                   disk('/dev/sdd', **{'log-sec': 512})]
+        media = {'/dev/sdb': 'sd', '/dev/sdc': 'other', '/dev/sdd': 'unknown'}
+        with patch.object(host.shutil, 'which', return_value='/usr/bin/tool'), \
+             patch.object(host, 'inventory', return_value=devices), \
+             patch.object(host, 'source_info', return_value=(source, {'/dev/mmcblk0'})), \
+             patch.object(host, 'mounted_device', return_value=({'name': '/dev/mmcblk0'}, {})), \
+             patch.object(host, 'target_ok', return_value=True), \
+             patch.object(host, 'identity', side_effect=lambda d: [d['name']]), \
+             patch.object(host, 'media_type', side_effect=lambda d: media[d['name']]), \
+             patch.object(host, 'run') as commands:
+            cloner = host.Cloner()
+            scan = cloner.scan('sd')
+            self.assertEqual([t['eligible'] for t in scan['targets']], [True, False, True])
+            self.assertIn('token', scan['targets'][0])
+            self.assertNotIn('token', scan['targets'][1])
+            self.assertIn('token', scan['targets'][2])
+            self.assertTrue(scan['targets'][2]['requires_sd_confirmation'])
+            token = scan['targets'][0]['token']
+            media['/dev/sdb'] = 'unknown'  # Same identity and capacity, but no longer reported as SD.
+            with self.assertRaisesRegex(ValueError, 'SD media is unidentified'):
+                cloner.start(token, '/dev/sdb')
+            self.assertEqual(cloner.status()['status'], 'idle')
+            commands.assert_not_called()
+            unknown_token = scan['targets'][2]['token']
+            with patch.object(host.threading, 'Thread') as thread:
+                for unverified in (False, None, 'true', 1):
+                    with self.subTest(unverified=unverified), self.assertRaisesRegex(ValueError, 'Verify'):
+                        cloner.start(unknown_token, '/dev/sdd', unverified)
+                thread.assert_not_called()
+                result = cloner.start(unknown_token, '/dev/sdd', True)
+                self.assertEqual(result['status'], 'running')
+                thread.return_value.start.assert_called_once()
+                worker_info, worker_target = thread.call_args.kwargs['args']
+                self.assertTrue(worker_target['sd_confirmed'])
+                # The worker repeats checks with the same verified selection.
+                cloner.revalidate(worker_info, worker_target)
+                media['/dev/sdd'] = 'other'
+                with self.assertRaisesRegex(ValueError, 'not eligible'):
+                    cloner.revalidate(worker_info, worker_target)
+            cloner.update(status='complete')
+            # The restriction is specific to OS cloning; USB content copying still works.
+            source['kind'] = 'usb'
+            scan = cloner.scan('usb')
+            self.assertTrue(all(t['eligible'] and 'token' in t for t in scan['targets']))
+
+
 class WorkerTests(unittest.TestCase):
     def test_copy_layout_cleanup_and_reader_recovery(self):
         for kind, fails in [('usb', False), ('sd', False), ('usb', True)]:
@@ -239,7 +324,7 @@ class AppCloneTests(unittest.TestCase):
                 setattr(self.app, attr, False)
             request.assert_not_called()
             self.app.clone('start', {'token': 't', 'confirmation': '/dev/sdb'})
-            request.assert_called_once_with('start', token='t', confirmation='/dev/sdb')
+            request.assert_called_once_with('start', token='t', confirmation='/dev/sdb', sd_confirmed=False)
 
     def test_unknown_service_state_fails_closed_but_absent_service_allows_downloads(self):
         with patch.object(app, 'clone_status', return_value={'status': 'unknown'}):

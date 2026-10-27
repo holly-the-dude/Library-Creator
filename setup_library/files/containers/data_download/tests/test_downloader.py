@@ -515,7 +515,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_clone_endpoints_require_token_and_forward_only_fixed_fields(self):
         with patch.object(app, "clone_status", return_value={"status": "idle"}), patch.object(app, "clone_request", return_value={"targets": []}) as clone:
-            for action, body in [("scan", {"source": "usb"}), ("start", {"token": "selection", "confirmation": "/dev/sdb"})]:
+            for action, body in [("scan", {"source": "usb"}), ("start", {"token": "selection", "confirmation": "/dev/sdb", "sd_confirmed": True})]:
                 request = Request(self.base + "/api/clone/" + action, data=json.dumps(body).encode())
                 with self.assertRaises(HTTPError) as error:
                     urlopen(request)

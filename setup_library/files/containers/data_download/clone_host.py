@@ -84,8 +84,45 @@ def identity(disk):
     return [disk['name'], disk['maj:min'], disk.get('serial'), disk['size'], seq]
 
 
-def target_ok(disk, protected):
-    if (disk['type'] != 'disk' or disk.get('tran') != 'usb'
+def native_sd(disk):
+    """The MMC subsystem exposes the card type, unlike USB mass storage."""
+    name = Path(disk['name']).name
+    if not re.fullmatch(r'mmcblk\d+', name):
+        return False
+    try:
+        return (Path('/sys/class/block') / name / 'device/type').read_text().strip() == 'SD'
+    except OSError:
+        return False
+
+
+def media_type(disk):
+    """Require reported SD *media*, never a model-name guess or reader capability.
+
+    UDisks distinguishes ID_DRIVE_FLASH_SD (reader support) from
+    ID_DRIVE_MEDIA_FLASH_SD/SDHC/SDXC (inserted media). Unknown requires
+    explicit user verification for an OS clone; names are not proof.
+    """
+    if native_sd(disk):
+        return 'sd'
+    try:
+        properties = dict(line.split('=', 1) for line in
+                          run('udevadm', 'info', '--query=property', '--name', disk['name']).splitlines()
+                          if '=' in line)
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return 'unknown'
+    sd_keys = {'ID_DRIVE_MEDIA_FLASH_SD', 'ID_DRIVE_MEDIA_FLASH_SDHC', 'ID_DRIVE_MEDIA_FLASH_SDXC'}
+    other_media = any(value == '1' and key.startswith('ID_DRIVE_MEDIA_')
+                      and key not in sd_keys | {'ID_DRIVE_MEDIA_FLASH'}
+                      for key, value in properties.items())
+    if properties.get('ID_DRIVE_THUMB') == '1' or other_media:
+        return 'other'
+    if any(properties.get(key) == '1' for key in sd_keys):
+        return 'sd'
+    return 'unknown'
+
+
+def target_ok(disk, protected, kind=None):
+    if (disk['type'] != 'disk' or (disk.get('tran') != 'usb' and not (kind == 'sd' and native_sd(disk)))
             or disk['name'] in protected or disk.get('ro') or not disk.get('size')):
         return False
     for node in walk(disk):
@@ -161,14 +198,19 @@ def inspect(kind):
     protected.add(boot_disk['name'])
     targets = []
     for disk in disks:
-        if target_ok(disk, protected):
+        if target_ok(disk, protected, kind):
             if kind == 'sd' and (disk.get('log-sec') != 512 or disk['size'] >= 2 * 1024 ** 4):
                 continue
             try:
                 fingerprint = identity(disk)
             except OSError:
                 continue
+            media = media_type(disk)
+            eligible = kind != 'sd' or media in {'sd', 'unknown'}
+            reason = '' if eligible else 'OS clones require an SD card. This device reports another media type.'
             targets.append({'device': disk['name'], 'size': disk['size'],
+                            'media': media, 'eligible': eligible, 'blocked_reason': reason,
+                            'requires_sd_confirmation': kind == 'sd' and media == 'unknown',
                             'model': (disk.get('model') or 'USB device').strip(),
                             'serial': disk.get('serial') or '', 'identity': fingerprint,
                             'fits': disk['size'] >= info['required']})
@@ -242,21 +284,26 @@ class Cloner:
             info, targets = inspect(kind)
             self.plans = {}  # Each scan invalidates old confirmations.
             for target in targets:
-                token = secrets.token_urlsafe(32)
-                self.plans[token] = (time.monotonic(), info, copy.deepcopy(target))
-                target['token'] = token
+                if target.get('eligible', True):
+                    token = secrets.token_urlsafe(32)
+                    self.plans[token] = (time.monotonic(), info, copy.deepcopy(target))
+                    target['token'] = token
                 target.pop('identity')
             return {'source': {k: info[k] for k in ('kind', 'device', 'used', 'required')},
                     'targets': targets}
 
-    def start(self, token, confirmation):
+    def start(self, token, confirmation, sd_confirmed=False):
         with self.lock:
             if self.state['status'] == 'running':
                 raise ValueError('A clone is already running')
             plan = self.plans.get(token) if isinstance(token, str) else None
             if not plan or time.monotonic() - plan[0] > 300:
                 raise ValueError('Scan again; destination selection expired')
-            _, info, target = plan
+            _, info, planned_target = plan
+            target = copy.deepcopy(planned_target)
+            target['sd_confirmed'] = sd_confirmed is True
+            if info['kind'] == 'sd' and target.get('media') == 'unknown' and not target['sd_confirmed']:
+                raise ValueError('Verify that the destination is an SD card and that you intend to copy the operating system.')
             if confirmation != target['device']:
                 raise ValueError('Confirm the destination device name to erase it')
             self.revalidate(info, target)
@@ -270,6 +317,11 @@ class Cloner:
     def revalidate(self, info, target):
         fresh, targets = inspect(info['kind'])
         match = next((t for t in targets if t['identity'] == target['identity']), None)
+        if info['kind'] == 'sd':
+            if not match or not match.get('eligible') or match.get('media') not in {'sd', 'unknown'}:
+                raise ValueError('OS clones require an SD card. This destination is not eligible; scan again.')
+            if match['media'] == 'unknown' and target.get('sd_confirmed') is not True:
+                raise ValueError('SD media is unidentified. Scan again and verify the SD card and operating-system copy.')
         if fresh['identity'] != info['identity'] or not match or not match['fits']:
             raise ValueError('Source/destination changed, is in use, or is too small. Scan again.')
         return fresh
@@ -400,7 +452,7 @@ class Handler(socketserver.StreamRequestHandler):
             elif action == 'scan':
                 result = self.server.cloner.scan(body.get('source'))
             elif action == 'start':
-                result = self.server.cloner.start(body.get('token'), body.get('confirmation'))
+                result = self.server.cloner.start(body.get('token'), body.get('confirmation'), body.get('sd_confirmed', False))
             else:
                 raise ValueError('Unknown clone action')
             response = {'ok': True, 'result': result}

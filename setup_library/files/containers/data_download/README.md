@@ -53,8 +53,11 @@ files or category folders are kept and shown as **Already present**.
 ## Clone a drive
 
 Select **Clone** to copy the running SD card or the `Library_USB` content drive
-to a spare USB stick or an SD card in a USB adapter plugged into the Pi. The
-destination can be smaller than the source: it needs room for the **used data
+to a spare drive plugged into the Pi. **OS clones require an SD
+card**; identified USB sticks and other media are blocked. If the adapter cannot
+report the media type, a prompt asks you to verify the SD card and OS copy
+before the separate erase confirmation.
+`Library_USB` content can be cloned to a USB stick. The destination can be smaller than the source: it needs room for the **used data
 plus filesystem overhead**. For example, 100 GB of content on a 512 GB source
 can fit on a 128 GB stick. The page checks capacity and requires confirmation
 before erasing the destination. Current system/content drives are protected.

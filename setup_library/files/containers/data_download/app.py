@@ -405,7 +405,8 @@ class Application:
             if action == "start":
                 if self.upload_active or self.refreshing or any(job["status"] in ACTIVE for job in self.jobs.values()):
                     raise ValueError("Wait for uploads, downloads and source refresh to finish before cloning")
-                return clone_request("start", token=body.get("token"), confirmation=body.get("confirmation"))
+                return clone_request("start", token=body.get("token"), confirmation=body.get("confirmation"),
+                                     sd_confirmed=body.get("sd_confirmed", False))
             return clone_request("scan", source=body.get("source"))
 
     def upload(self, stream, length, category, name):

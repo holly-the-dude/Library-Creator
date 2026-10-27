@@ -1,12 +1,28 @@
 "use strict";
+/**
+ * Library downloader UI. DOM IDs are defined in index.html.
+ * poll() fetches backend state; render functions turn that state into the UI.
+ * Event handlers submit actions, and subsequent polls reconcile their results.
+ * Downloads and clones run on the Pi; uploads stream from this browser and
+ * require the page to stay open until the batch finishes.
+ */
 const $ = id => document.getElementById(id);
 const activeStates = new Set(["queued", "downloading", "verifying", "extracting"]);
+// Backend snapshot plus local navigation. State-only polls omit the catalog,
+// so poll() merges responses to preserve the most recent catalog listing.
 let state = {catalog: [], jobs: [], sources: {}, storage: {}, internet: {status: "checking"}}, source = "maps", page = 0;
+// Selection spans pages and tabs; visible contains only the current page.
+// These choices are local to this page and reset when it is reloaded.
 let selected = new Set(), visible = [], pollNumber = 0;
+// Local busy flags cover requests/batches in this browser. Backend flags such
+// as state.upload_active also reflect work started by other browser sessions.
 let restartBusy = false, restartError = "";
 let uploadFiles = [], uploadBusy = false;
 let uploadRestartPending = false;
+// Scan results contain short-lived destination tokens, separate from the
+// ongoing clone job in state.clone. Changing the source discards these results.
 let cloneScan = null, cloneBusy = false, cloneError = "";
+// Unknown host status also blocks conflicting actions until it is resolved.
 function cloning() { return cloneBusy || ["running", "unknown"].includes(state.clone?.status); }
 const uploadDestinations = {music: "/Library/music", data: "/Library/library", ebooks: "/Library/calibre/put_new_books_here"};
 const remindedDownloads = new Set();
@@ -19,12 +35,14 @@ const hints = {
   wiki: "Offline websites, encyclopedias, books, videos, and maps from Kiwix. ZIM files open in the Library's Wikipedia / Kiwix reader after restart. For StreetZim's regional maps, use the StreetZim maps tab.",
   survivor: "Category ZIPs only. PDFs are extracted into a category folder; the ZIP is then removed. Space is needed for both the ZIP and its PDFs."
 };
+// Binary units; a missing size means it is not known yet, rather than zero.
 function bytes(value) {
   if (value === null || value === undefined) return "Size checked on download";
   if (!value) return "0 B";
   const units = ["B", "KiB", "MiB", "GiB", "TiB"], exponent = Math.min(4, Math.floor(Math.log(value) / Math.log(1024)));
   return (value / 1024 ** exponent).toFixed(exponent ? 1 : 0) + " " + units[exponent];
 }
+// Use textContent for catalog titles, device names, and errors, never HTML.
 function element(tag, text, className) {
   const node = document.createElement(tag);
   if (text !== undefined) node.textContent = text;
@@ -32,6 +50,11 @@ function element(tag, text, className) {
   return node;
 }
 function notice(message = "") { $("notice").textContent = message; $("notice").hidden = !message; }
+/**
+ * GET when body is omitted; otherwise POST JSON with the latest server token.
+ * Callers handle errors in the relevant panel. The token protects mutation
+ * requests against cross-site requests; it is not a user login credential.
+ */
 async function api(path, body) {
   const response = await fetch(path, body === undefined ? {} : {
     method: "POST", headers: {"Content-Type": "application/json", "X-Library-Token": state.token}, body: JSON.stringify(body)
@@ -51,6 +74,8 @@ function renderInternet() {
     ? "Local uploads work offline. Checking again every 30 seconds; downloads will become available when the connection returns."
     : "Local uploads work without internet. Waiting for the Pi to connect before checking download sources.";
 }
+// Preliminary selection check. Unknown sizes remain selectable; the backend
+// performs the authoritative size, destination, and available-space checks.
 function eligible(row) {
   return state.internet.status === "online" && state.storage.ready && !installed(row) && !activeStates.has(jobFor(row)?.status)
     && (row.size == null || row.size <= state.storage.available);
@@ -122,11 +147,14 @@ function zimDetails(row) {
   const edition = {maxi: "Full articles with pictures", nopic: "Articles without pictures", mini: "Short introductory articles"}[row.flavour] || row.flavour;
   return [rowLanguages(row).map(languageName).join(", "), collectionName(rowCategory(row)), edition, row.date].filter(Boolean).join(" · ");
 }
+// Filter the current source before pagination. Wikipedia adds edition,
+// language, and collection filters; search and available-space filters are shared.
 function filteredRows() {
   let rows = state.catalog.filter(row => row.source === source);
   if (source === "wiki" && $("latest").checked) {
     const latest = new Map();
     for (const row of rows) {
+      // Strip only the dated suffix so editions such as maxi/nopic stay distinct.
       const key = row.filename.replace(/_\d{4}-\d{2}\.zim$/, ".zim");
       if (!latest.has(key) || row.filename > latest.get(key).filename) latest.set(key, row);
     }
@@ -140,6 +168,8 @@ function filteredRows() {
       ...(source === "wiki" ? [zimDetails(row)] : [])].join(" ").toLowerCase().includes(query)
     && (!$("fits").checked || (state.storage.ready && row.size != null && row.size <= state.storage.available)));
 }
+// Switch between catalog, upload, and clone panels, then render the current
+// catalog page. Local uploads and cloning do not require an online catalog.
 function renderFiles() {
   const uploading = source === "upload";
   const cloneTab = source === "clone";
@@ -202,6 +232,8 @@ function renderFiles() {
   $("latest-label").hidden = source !== "wiki";
   renderSelection();
 }
+// Totals include all selected pages; the header checkbox affects only visible
+// eligible rows. Unknown sizes and ZIP expansion still need backend checks.
 function renderSelection() {
   const rows = state.catalog.filter(row => selected.has(row.id));
   const known = rows.reduce((sum, row) => sum + (row.size || 0), 0), unknown = rows.some(row => row.size == null);
@@ -212,6 +244,8 @@ function renderSelection() {
   $("select-page").indeterminate = checked.length > 0 && checked.length < choices.length;
   $("select-page").disabled = !choices.length;
 }
+// Newest jobs first. Download and extraction stages use separate byte totals;
+// verification and stages without a known total show indeterminate progress.
 function renderJobs() {
   $("jobs").replaceChildren();
   const count = state.jobs.filter(job => activeStates.has(job.status)).length;
@@ -244,6 +278,7 @@ function renderJobs() {
     $("jobs").append(card);
   }
 }
+// Choosing a routing region schedules its import for the next restart.
 function renderRouting() {
   $("routing-panel").hidden = source !== "routing";
   const info = state.routing || {downloads: []};
@@ -296,6 +331,12 @@ function showRestartReminder() {
   uploadRestartPending = false;
   for (const job of completed) remindedDownloads.add(job.id);
 }
+/**
+ * Refresh status every 2.5 seconds after the previous request finishes, avoiding
+ * overlapping polling requests. Fetch the larger catalog every fifth poll, or
+ * on every poll while sources are refreshing. Prune selections that are no
+ * longer eligible, then repaint. Stop polling after an accepted restart request.
+ */
 async function poll() {
   if (state.restart?.requested) return;
   try {
@@ -309,11 +350,18 @@ async function poll() {
   } catch (error) { if (!state.restart?.requested) notice("Cannot reach the downloader: " + error.message); }
   setTimeout(poll, 2500);
 }
+// Submit catalog IDs; the backend owns the download queue and source URLs.
 async function download(ids) {
   try { await api("/api/download", {ids}); selected.clear(); notice(); pollNumber = 0; renderSelection(); }
   catch (error) { notice(error.message); }
 }
 function uploadCategory() { return document.querySelector('[name="upload-category"]:checked').value; }
+/**
+ * Show progress for the current host-reported stage, not an overall ETA.
+ * Container stages count containers; copying stages estimate bytes per
+ * filesystem (SD root and boot are separate). Only host completion means 100%.
+ * Older helpers without phase/total fields can still show copied-byte text.
+ */
 function renderCloneProgress(info) {
   const panel = $("clone-progress-panel"), bar = $("clone-progress"), label = $("clone-progress-text");
   panel.hidden = !["running", "complete"].includes(info.status);
@@ -343,6 +391,34 @@ function renderCloneProgress(info) {
   } else if (info.phase === "finalizing") label.textContent = "Finishing writes and safely unmounting…";
   else if (info.phase === "formatting") label.textContent = "Preparing the destination…";
 }
+// Browser prompt() cannot style text. A modal dialog highlights the exact device
+// while retaining typed confirmation; Cancel and Escape resolve without approval.
+function confirmCloneDestination(target, sdClone) {
+  const dialog = $("clone-confirm"), input = $("clone-confirm-input"), submit = $("clone-confirm-submit");
+  $("clone-confirm-message").replaceChildren("Erase ALL data on ",
+    element("strong", target.device, "clone-device"),
+    ` (${target.model}, ${bytes(target.size)}) and clone the ${sdClone ? "SD card" : "Library_USB"}?`);
+  $("clone-confirm-device").textContent = target.device;
+  input.value = ""; submit.disabled = true; dialog.returnValue = "";
+  return new Promise(resolve => {
+    input.oninput = () => { submit.disabled = input.value !== target.device; };
+    $("clone-confirm-form").onsubmit = event => {
+      event.preventDefault();
+      if (input.value === target.device) dialog.close("confirmed");
+    };
+    $("clone-confirm-cancel").onclick = () => dialog.close();
+    dialog.addEventListener("close", () => {
+      const confirmation = dialog.returnValue === "confirmed" && input.value === target.device ? input.value : null;
+      input.oninput = null;
+      $("clone-confirm-form").onsubmit = null;
+      $("clone-confirm-cancel").onclick = null;
+      resolve(confirmation);
+    }, {once: true});
+    dialog.showModal();
+  });
+}
+// Combine the latest scan with host job status. Media eligibility and capacity
+// are separate checks; the host revalidates the destination before erasing it.
 function renderClone() {
   const info = state.clone || {};
   const transfers = uploadBusy || state.upload_active || state.refreshing || state.jobs.some(job => activeStates.has(job.status));
@@ -353,18 +429,40 @@ function renderClone() {
   $("clone-capacity").textContent = cloneScan ? `Source: ${cloneScan.source.device} · Used: ${bytes(cloneScan.source.used)} · Destination needs at least ${bytes(cloneScan.source.required)} including filesystem overhead.` : "";
   $("clone-targets").replaceChildren();
   if (!cloneScan) return;
-  if (!cloneScan.targets.length) $("clone-targets").append(element("p", "No unused USB destination found. Insert a spare drive into the Pi and scan again. Mounted or in-use drives are not offered."));
+  if (!cloneScan.targets.length) $("clone-targets").append(element("p", cloneScan.source.kind === "sd"
+    ? "No unused SD destination found. Insert an SD card in a USB reader and scan again. Mounted or in-use drives are not offered."
+    : "No unused USB destination found. Insert a spare drive into the Pi and scan again. Mounted or in-use drives are not offered."));
   for (const target of cloneScan.targets) {
     const row = element("div", undefined, "clone-target");
     row.append(element("p", `${target.device} · ${target.model} · ${bytes(target.size)}${target.serial ? " · Serial: " + target.serial : ""}`));
-    const button = element("button", target.fits ? "Erase and clone…" : "Too small");
-    button.disabled = !target.fits || cloning() || transfers || !info.available || state.restart?.requested;
+    const sdClone = cloneScan.source.kind === "sd";
+    // Unknown media is allowed only when the host explicitly supports user
+    // verification. Missing fields from older helpers must not allow OS cloning.
+    const needsVerification = sdClone && target.media === "unknown" && target.requires_sd_confirmation === true;
+    const allowed = target.eligible !== false && (!sdClone || (target.eligible === true && (target.media === "sd" || needsVerification)));
+    row.append(element("p", target.media === "sd" ? "SD card detected" : target.media === "other" ? "Other storage media" : "Media type unidentified"));
+    if (needsVerification) row.append(element("p", "Cannot identify the media type. Before copying the operating system, you must verify that this destination is an SD card in a reader.", "warning"));
+    if (!allowed) row.append(element("p", target.blocked_reason || "This destination has not been approved for OS cloning. Update the host clone service and scan again.", "warning"));
+    const button = element("button", !allowed ? "SD card required" : target.fits ? "Erase and clone…" : "Too small");
+    button.disabled = !allowed || !target.fits || cloning() || transfers || !info.available || state.restart?.requested;
     button.addEventListener("click", async () => {
-      const confirmation = prompt(`Erase ALL data on ${target.device} (${target.model}, ${bytes(target.size)}) and clone the ${cloneScan.source.kind === "sd" ? "SD card" : "Library_USB"}? Type ${target.device} to confirm.`);
-      if (confirmation !== target.device) return;
+      if (!allowed) return;
+      // Confirm physical SD media and OS-copy intent first, then separately
+      // require the device path to acknowledge erasing this exact destination.
+      if (needsVerification && !confirm(`The Library cannot tell whether ${target.device} (${target.model}, ${bytes(target.size)}) is an SD card.
+
+Verify that this destination is an SD card in a reader, not a USB stick, and that you intend to copy the Library OPERATING SYSTEM to it. All existing data on this destination will be erased.
+
+Have you verified the SD card and want to continue with the OS copy?`)) return;
+      // Keep scans and other actions disabled while the asynchronous dialog is open.
       cloneBusy = true; cloneError = ""; renderClone();
       try {
-        const result = await api("/api/clone/start", {token: target.token, confirmation});
+        const confirmation = await confirmCloneDestination(target, sdClone);
+        if (confirmation !== target.device) return;
+        const result = await api("/api/clone/start", {token: target.token, confirmation,
+          ...(needsVerification ? {sd_confirmed: true} : {})});
+        // The job was accepted, not completed. Discard the consumed scan token;
+        // subsequent polls track the host's background work.
         state.clone = {available: true, ...result}; cloneScan = null;
       } catch (error) { cloneError = error.message; }
       finally { cloneBusy = false; renderClone(); showRestartReminder(); }
@@ -380,6 +478,8 @@ $("clone-scan").addEventListener("click", async () => {
   finally { cloneBusy = false; renderClone(); }
 });
 
+// Selected bytes exclude ZIP expansion; the server also checks space while
+// saving/extracting. Controls account for both local and other-client uploads.
 function renderUpload() {
   const total = uploadFiles.reduce((sum, file) => sum + file.size, 0);
   $("upload-destination").textContent = `Saves to ${uploadDestinations[uploadCategory()]}`;
@@ -394,6 +494,8 @@ function renderUpload() {
     : total > state.storage.available ? "The selected files exceed the available drive space. Choose fewer files."
     : "";
 }
+// File and folder pickers replace each other. Folder uploads preserve relative
+// paths; preview only the first 100 entries to keep large selections manageable.
 function selectUploads(input) {
   uploadFiles = [...input.files];
   $(input.id === "upload-files" ? "upload-folder" : "upload-files").value = "";
@@ -403,6 +505,12 @@ function selectUploads(input) {
   $("upload-progress").hidden = true;
   renderUpload();
 }
+/**
+ * Use XHR for upload progress events. completed/total are batch byte counts;
+ * index/count identify this file within the batch.
+ * Sending all bytes is not completion: wait for the server to save/extract the
+ * file and return its response before resolving and starting the next file.
+ */
 function sendUpload(file, category, completed, total, index, count) {
   return new Promise((resolve, reject) => {
     const request = new XMLHttpRequest();
@@ -431,6 +539,8 @@ function sendUpload(file, category, completed, total, index, count) {
 $("upload-files").addEventListener("change", event => selectUploads(event.target));
 $("upload-folder").addEventListener("change", event => selectUploads(event.target));
 document.querySelectorAll('[name="upload-category"]').forEach(input => input.addEventListener("change", renderUpload));
+// Capture a fixed batch/category and upload sequentially. Stop on the first
+// failure; successful files stay saved and still trigger the relevant reminder.
 $("upload-start").addEventListener("click", async () => {
   if (uploadBusy) return;
   const files = [...uploadFiles], category = uploadCategory();
@@ -462,10 +572,13 @@ $("upload-start").addEventListener("click", async () => {
   }
 });
 $("music-reminder").addEventListener("close", showRestartReminder);
+// Only uploads depend on this tab staying open; downloads/clones run on the Pi.
 window.addEventListener("beforeunload", event => {
   if (uploadBusy) { event.preventDefault(); event.returnValue = ""; }
 });
+// Return to the Library on this host's default web port, including IPv6 hosts.
 $("home").href = `${location.protocol}//${location.hostname.includes(":") ? "[" + location.hostname.replace(/[\[\]]/g, "") + "]" : location.hostname}/`;
+// Navigation and filter changes reset pagination but preserve eligible selections.
 document.querySelectorAll("[data-source]").forEach(button => button.addEventListener("click", () => {
   source = button.dataset.source; page = 0;
   document.querySelectorAll("[data-source]").forEach(tab => tab.setAttribute("aria-pressed", String(tab === button)));
@@ -477,6 +590,8 @@ $("next").addEventListener("click", () => { page++; renderFiles(); });
 $("select-page").addEventListener("change", () => {
   visible.filter(eligible).forEach(row => $("select-page").checked ? selected.add(row.id) : selected.delete(row.id)); renderFiles();
 });
+// Mark restart requested only after the API accepts it. A rejected request
+// leaves polling active and displays an error so the user can try again.
 $("restart-now").addEventListener("click", async () => {
   restartBusy = true; restartError = "";
   $("restart-now").disabled = true;
@@ -497,4 +612,6 @@ $("refresh").addEventListener("click", async () => {
   try { await api("/api/refresh", {}); notice(); state.refreshing = true; pollNumber = 0; renderSources(); }
   catch (error) { notice(error.message); }
 });
+// Start polling after all event handlers are registered.
+
 poll();

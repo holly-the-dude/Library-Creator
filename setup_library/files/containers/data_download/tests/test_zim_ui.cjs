@@ -8,10 +8,12 @@ const path = require('node:path');
 function ui() {
   const nodes = new Map();
   function node() {
-    return {value: '', checked: false, dataset: {}, children: [],
+    return {value: '', checked: false, dataset: {}, children: [], listeners: {},
+      showModal() { this.open = true; },
+      close(value) { if (value !== undefined) this.returnValue = value; this.open = false; this.listeners.close?.(); },
       append(...children) { this.children.push(...children); },
       replaceChildren(...children) { this.children = children; },
-      setAttribute() {}, removeAttribute(name) { delete this[name]; }, addEventListener() {}};
+      setAttribute() {}, removeAttribute(name) { delete this[name]; }, addEventListener(name, callback) { this.listeners[name] = callback; }};
   }
   const document = {
     getElementById(id) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
@@ -106,11 +108,11 @@ test('Clone tab works offline and reports used-data capacity and small destinati
   assert.equal(u.nodes.get('upload-panel').hidden, true);
   assert.equal(Boolean(u.nodes.get('clone-scan').disabled), false);
   assert.match(u.nodes.get('clone-capacity').textContent, /Used: 100.0 GiB/);
-  assert.equal(Boolean(u.nodes.get('clone-targets').children[0].children[1].disabled), false);
-  assert.equal(u.nodes.get('clone-targets').children[1].children[1].disabled, true);
+  assert.equal(Boolean(u.nodes.get('clone-targets').children[0].children.at(-1).disabled), false);
+  assert.equal(u.nodes.get('clone-targets').children[1].children.at(-1).disabled, true);
   u.run(`state.clone.status = 'running'; state.clone.message = 'Copying'; state.clone.copied = 1024; renderClone();`);
   assert.equal(u.nodes.get('clone-scan').disabled, true);
-  assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
+  assert.equal(u.nodes.get('clone-targets').children[0].children.at(-1).disabled, true);
   assert.match(u.nodes.get('clone-progress-text').textContent, /Copied 1.0 KiB/);
 });
 
@@ -121,7 +123,7 @@ test('Clone controls explain missing host support and disable starting during tr
   assert.match(u.nodes.get('clone-status').textContent, /Install host clone/);
   u.run(`state.clone.available=true; state.upload_active=true;
     cloneScan={source:{device:'/dev/sda1',used:100,required:200},targets:[{device:'/dev/sdb',model:'USB',size:300,fits:true}]}; renderClone();`);
-  assert.equal(u.nodes.get('clone-targets').children[0].children[1].disabled, true);
+  assert.equal(u.nodes.get('clone-targets').children[0].children.at(-1).disabled, true);
   assert.match(u.nodes.get('clone-status').textContent, /Wait for transfers/);
 });
 
@@ -161,5 +163,94 @@ test('Clone progress waits for cleanup and reader restart before announcing comp
   for (const status of ['idle', 'failed', 'unavailable']) {
     u.run(`state.clone.status='${status}'; renderClone();`);
     assert.equal(u.nodes.get('clone-progress-panel').hidden, true);
+  }
+});
+
+
+test('OS clone destinations allow verified unknown media but still block known USB sticks and old hosts', () => {
+  const u = ui();
+  u.run(`source='clone'; state.clone={available:true,status:'idle'};
+    cloneScan={source:{kind:'sd',device:'/dev/mmcblk0',used:100,required:200},targets:[
+      {device:'/dev/sdb',model:'Card',size:300,fits:true,eligible:true,media:'sd'},
+      {device:'/dev/sdc',model:'USB stick',size:300,fits:true,eligible:false,media:'other',blocked_reason:'OS clones require SD'},
+      {device:'/dev/sdd',model:'Generic Reader',size:300,fits:true,eligible:true,media:'unknown',requires_sd_confirmation:true},
+      {device:'/dev/sde',model:'Old host response',size:300,fits:true}]}; renderClone();`);
+  const rows = u.nodes.get('clone-targets').children;
+  assert.equal(Boolean(rows[0].children.at(-1).disabled), false);
+  assert.equal(rows[0].children[1].textContent, 'SD card detected');
+  assert.equal(Boolean(rows[2].children.at(-1).disabled), false);
+  assert.match(rows[2].children[2].textContent, /must verify/);
+  for (const row of [rows[1], rows[3]]) {
+    assert.equal(row.children.at(-1).disabled, true);
+    assert.equal(row.children.at(-1).textContent, 'SD card required');
+  }
+  assert.match(rows[1].children[2].textContent, /OS clones require SD/);
+  assert.match(rows[3].children[2].textContent, /Update the host clone service/);
+});
+
+
+test('Unknown media prompts for SD and OS verification before the separate erase confirmation', async () => {
+  for (const [verified, erase] of [[false, '/dev/sdd'], [true, null], [true, '/dev/sdd']]) {
+    const u = ui();
+    u.run(`source='clone'; state.clone={available:true,status:'idle'};
+      cloneScan={source:{kind:'sd',device:'/dev/mmcblk0',used:100,required:200},targets:[
+        {device:'/dev/sdd',model:'Generic Reader',size:300,fits:true,eligible:true,media:'unknown',requires_sd_confirmation:true,token:'selection'}]};
+      globalThis.confirmations=[]; globalThis.requests=[];
+      globalThis.confirm=(message)=>{ confirmations.push(message); return ${verified}; };
+      api=async (path,body)=>{ requests.push({path,body}); return {status:'running'}; };
+      renderClone();`);
+    const pending = u.nodes.get('clone-targets').children[0].children.at(-1).listeners.click();
+    assert.equal(Boolean(u.nodes.get('clone-confirm')?.open), verified);
+    assert.equal(u.run('requests.length'), 0);
+    if (verified) {
+      if (erase) {
+        u.set('clone-confirm-input', erase);
+        u.nodes.get('clone-confirm-form').onsubmit({preventDefault() {}});
+      } else u.nodes.get('clone-confirm-cancel').onclick();
+    }
+    await pending;
+    assert.equal(u.run('confirmations.length'), 1);
+    assert.match(u.run('confirmations[0]'), /SD card in a reader, not a USB stick/);
+    assert.match(u.run('confirmations[0]'), /OPERATING SYSTEM/);
+    assert.equal(u.run('requests.length'), verified && erase ? 1 : 0);
+    if (verified && erase) {
+      assert.equal(u.run('requests[0].body.sd_confirmed'), true);
+      assert.equal(u.run('requests[0].body.confirmation'), '/dev/sdd');
+      assert.equal(u.run('requests[0].body.token'), 'selection');
+    }
+  }
+});
+
+test('Clone dialog highlights the actual device and requires an exact typed match', async () => {
+  const u = ui();
+  const pending = u.run(`confirmCloneDestination({device:'/dev/sdz',model:'USB <test>',size:1024}, false)`);
+  const message = u.nodes.get('clone-confirm-message').children;
+  assert.equal(message[1].textContent, '/dev/sdz');
+  assert.equal(message[1].className, 'clone-device');
+  assert.match(message[2], /USB <test>.*Library_USB/);
+  assert.equal(u.nodes.get('clone-confirm-device').textContent, '/dev/sdz');
+  const input = u.nodes.get('clone-confirm-input'), submit = u.nodes.get('clone-confirm-submit');
+  assert.equal(submit.disabled, true);
+  for (const value of ['/dev/sdb', '/dev/sdz ']) {
+    input.value = value; input.oninput();
+    assert.equal(submit.disabled, true);
+    u.nodes.get('clone-confirm-form').onsubmit({preventDefault() {}});
+    assert.equal(u.nodes.get('clone-confirm').open, true);
+  }
+  input.value = '/dev/sdz'; input.oninput();
+  assert.equal(submit.disabled, false);
+  u.nodes.get('clone-confirm-form').onsubmit({preventDefault() {}});
+  assert.equal(await pending, '/dev/sdz');
+
+  // Reopening resets approval and input; Escape closes without a return value.
+  for (const cancel of ['button', 'escape']) {
+    const next = u.run(`confirmCloneDestination({device:'/dev/sdc',model:'Card',size:1024}, true)`);
+    assert.equal(input.value, '');
+    assert.equal(submit.disabled, true);
+    assert.match(u.nodes.get('clone-confirm-message').children[2], /SD card/);
+    input.value = '/dev/sdc'; input.oninput();
+    if (cancel === 'button') u.nodes.get('clone-confirm-cancel').onclick();
+    else u.nodes.get('clone-confirm').close();
+    assert.equal(await next, null);
   }
 });

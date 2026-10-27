@@ -2,7 +2,8 @@
 
 Open **Downloads → Clone**. Choose **SD card (bootable system)** or
 **Library_USB (content drive)**. Insert the destination into the **Pi**:
-an SD card in a USB SD adapter, or a USB stick. Select **Scan for destination**,
+an SD card in a USB SD reader for the operating system, or a USB
+stick for Library_USB content. Select **Scan for destination**,
 check the device/model/serial/capacity, and choose **Erase and clone…**.
 Type the displayed destination device name to confirm erasing **all its data**.
 Scanning does not change any drive. Selections expire after five minutes;
@@ -17,12 +18,37 @@ for its files, and alignment. This is a conservative estimate, not a guarantee
 against source growth or different allocation sizes. Exactly 100 GB of media
 is insufficient for 100 GB of files plus filesystem metadata.
 
-Only unused, writable USB disks are offered. Mounted partitions, swap,
+Only unused, writable USB disks (or native SD cards for OS cloning) are scanned. Mounted partitions, swap,
 active device-mapper/RAID holders, the running system disk, boot disk, and
 mounted Library disk are excluded. Device identity, including the kernel's
-insertion sequence, and available capacity are rechecked when starting and
+insertion sequence, media type, and available capacity are rechecked when starting and
 again immediately before partitioning. Unmount an otherwise eligible spare
 drive on the Pi before scanning; the app does not automatically unmount it.
+
+**Operating-system clones require an SD card.** The scan labels detected SD
+cards and blocks identified USB sticks or other media. If a reader cannot
+identify its inserted media, the destination is available with a warning.
+Before the erase confirmation, a separate prompt asks you to verify both that
+this destination is an **SD card in a reader, not a USB stick**, and that you
+intend to copy the **Library operating system**. Cancel either prompt to stop.
+The usual typed destination-device confirmation is still required afterward.
+Library_USB content cloning continues to allow USB sticks without this extra
+OS-copy prompt.
+
+Native MMC-subsystem cards must report card type `SD`. USB readers can expose
+an inserted-media property of `ID_DRIVE_MEDIA_FLASH_SD`, `_SDHC`, or `_SDXC`.
+These are distinct from reader capabilities such as `ID_DRIVE_FLASH_SD`; see
+[UDisks media classifications](https://github.com/storaged-project/udisks/blob/master/src/udiskslinuxdrive.c).
+Model names containing “SD” or “Card Reader”, USB connection, and removable-drive
+flags are not accepted as proof of SD media. Generic readers without media
+identification require your physical verification instead.
+
+The host requires explicit verification for unknown media, bound to the selected
+scan token. It repeats identity, media, mount and capacity checks before erasure.
+Verification does not bypass these checks or allow a device identified as
+non-SD media. If previously identified SD media becomes unknown, scan again to
+get the verification prompt. These checks apply to the downloader Clone flow;
+the existing startup-time cloning block remains unchanged.
 
 Finish uploads, queued downloads, extraction, and catalog refresh first.
 During cloning, the downloader blocks new writes, refresh, routing changes,
@@ -127,9 +153,13 @@ and, while working, the source, destination, `phase`, and `copied` byte count.
 Copy phases include `copy_total` (estimated used bytes for that filesystem).
 Stopping/restarting phases include `containers_done` and `containers_total`.
 `POST /api/clone/scan` takes `{"source":"sd"}` or `{"source":"usb"}` and returns
-source used/required bytes and eligible targets with `fits` and a one-use token.
+source used/required bytes and targets with `fits`, `media`, `eligible`, and
+`blocked_reason`. Unknown OS destinations also have `requires_sd_confirmation`
+set to true. Only eligible targets receive a one-use token.
 `POST /api/clone/start` takes the token and a `confirmation` matching the displayed
-device name. Both require the usual `X-Library-Token` header. Starting returns
+device name. An unknown OS destination additionally requires the JSON boolean
+`"sd_confirmed": true`, supplied only after the user verifies the SD card and
+OS copy. Both endpoints require the usual `X-Library-Token` header. Starting returns
 immediately; poll state for the result. There is no cancel action once erasure
 starts. A failed copy is not silently retried.
 
