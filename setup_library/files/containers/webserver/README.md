@@ -18,6 +18,13 @@ when its image is installed. See the [music player guide](../music_player/README
 for build and startup instructions. Music and Maps use the same menu styling;
 opening one chooser closes the other in browsers supporting exclusive details.
 
+The optional **Office** button opens HTTPS port 3001, retaining the current
+hostname. Its internal health check looks for Selkies at `10.88.0.218:3000`;
+that HTTP port is not published. If Office is disabled with `:dontrun`, missing,
+or stopped, the button is omitted when pages are generated. Regenerate pages
+after a manual status change; navigation does not poll continuously. See the
+[Office guide](../craft_apps/README.md) for bootstrap opt-in and storage details.
+
 ## File Structure
 
 ```

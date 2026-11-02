@@ -20,7 +20,7 @@ class MapMenuTests(unittest.TestCase):
         self.assertIn('/services/8093/', menu)
         self.assertIn('OpenStreetMap', menu)
         self.assertIn('StreetZim', menu)
-        self.assertEqual(len(links), 4)
+        self.assertEqual(len(links), 5)  # Wiki, Music, Office, eBooks, Maps.
 
     def test_streetzim_only_and_unavailable_viewer(self):
         with patch.object(library, 'check_service', side_effect=lambda s: 'up' if s['name'] == 'street_zim' else ''):

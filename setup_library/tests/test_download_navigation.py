@@ -29,7 +29,7 @@ class DownloadNavigationTests(unittest.TestCase):
     def test_downloads_follows_meshtastic_before_shutdown_when_offline(self):
         def response(url, **kwargs):
             # The downloader health response does not depend on internet access.
-            return Mock(content=b'{"status": "ok"}' if url.endswith("/api/health") else b"<html")
+            return Mock(status_code=200, content=b'{"status": "ok"}' if url.endswith("/api/health") else b"<html")
 
         with patch.object(web.requests, "get", side_effect=response) as get:
             links = web.discover_services(self.config["services"])
@@ -70,7 +70,7 @@ class DownloadNavigationTests(unittest.TestCase):
             self.config["webserver"].update(library_path=str(library), web_path=str(pages))
             with patch.object(web, "load_config", return_value=self.config), \
                  patch.object(web, "configure_nginx"), \
-                 patch.object(web.requests, "get", return_value=Mock(content=b'{"status": "ok"}')):
+                 patch.object(web.requests, "get", return_value=Mock(status_code=200, content=b'{"status": "ok"}')):
                 web.main()
             for filename in ("index.html", "Books.html"):
                 self.assertIn('href="/services/4826/"', (pages / filename).read_text())

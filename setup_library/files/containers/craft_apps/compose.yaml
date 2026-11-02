@@ -1,0 +1,31 @@
+services:
+  craft_apps:
+    build:
+      context: .
+      dockerfile: Containerfile
+    image: localhost/craft_apps:latest
+    container_name: craft_apps
+    environment:
+      # Root-owned exFAT is the appliance default. For other ownership, match it.
+      PUID: "${PUID:-0}"
+      PGID: "${PGID:-0}"
+      TZ: "${TZ:-America/Denver}"
+    ports:
+      - "${CRAFT_PORT:-3001}:3001"
+    volumes:
+      - "${CRAFT_DOCUMENTS:-/Library/documents}:/documents:rw"
+      - "craft-apps-config:/config:rw"
+    shm_size: "1gb"
+    restart: unless-stopped
+    networks:
+      library:
+        ipv4_address: 10.88.0.218
+
+networks:
+  library:
+    external: true
+    name: podman
+
+volumes:
+  craft-apps-config:
+    name: craft-apps-config

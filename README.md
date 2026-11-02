@@ -304,3 +304,13 @@ be. Your library is *yours*.
 If Library-Creator is useful to you, consider [supporting development via PayPal](https://www.paypal.com/ncp/payment/T8MGW39TXCR4J). Thank you!
 
 Prefer a ready-made device? Pre-configured kits are available at [librarydepository.com](https://librarydepository.com).
+
+## Optional Office apps
+
+Bootstrap offers WordCraft, DeckCraft, and GridCraft as an optional add-on,
+disabled by default. Use a browser device with **a keyboard and a mouse,
+touchscreen, or trackpad**. Enabled Office opens over **HTTPS on port 3001**;
+files saved in `/documents` live in `/Library/documents` on the Library drive.
+The `:dontrun` image tag disables startup and the homepage omits unavailable
+Office. See the [Office guide](setup_library/files/containers/craft_apps/README.md)
+for enabling, disabling, and storage details.

@@ -57,6 +57,30 @@ for dir in */; do
     echo "${BOLD}${CYAN}📦 Container: ${name}${RESET}"
     echo "${BOLD}${CYAN}────────────────────────────────────────────${RESET}"
 
+    # Office is built even when declined, retained as :dontrun for offline enabling.
+    # Avoid force-removing its old image, which can also remove the disabled tag.
+    if [[ "$name" == craft_apps ]]; then
+        office_choice=${LIBRARY_OFFICE:-}
+        if [[ -z "$office_choice" ]]; then
+            if podman image exists localhost/craft_apps:dontrun; then
+                office_choice=no
+            else
+                status=$?
+                [[ $status == 1 ]] || exit "$status"
+                office_choice=yes
+            fi
+        fi
+        case "$office_choice" in yes|no) ;; *) echo 'LIBRARY_OFFICE must be yes or no.' >&2; exit 1 ;; esac
+        if podman build --format docker -t "$tag" -f "${dir}${containerfile}" "$dir" &&
+                bash "${dir}set-enabled.sh" "$office_choice"; then
+            if [[ "$office_choice" == no ]]; then tag=localhost/craft_apps:dontrun; fi
+            built+=("$tag")
+        else
+            failed+=("$tag")
+        fi
+        continue
+    fi
+
     # Remove existing image (ignore errors if it doesn't exist).
     echo "${YELLOW}➜ Removing existing image '${tag}'...${RESET}"
     if podman rmi --force "${tag}" >/dev/null 2>&1; then

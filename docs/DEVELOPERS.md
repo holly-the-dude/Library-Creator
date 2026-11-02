@@ -550,3 +550,23 @@ example.
 - All persistent content lives under `/Library` (the USB) so images stay stateless.
 - Scripts print color-coded status (`[INFO]`/`[ OK]`/`[WARN]`/`[FAIL]`/`[STEP]`) and
   degrade to plain text when not attached to a terminal.
+
+## Optional Office container
+
+`craft_apps` packages WordCraft, DeckCraft, and GridCraft on an XFCE/Selkies
+browser desktop at `10.88.0.218`. Only HTTPS port 3001 is published. The webserver
+probes internal HTTP port 3000 for the Selkies page and redirects browser links
+to HTTPS 3001. A keyboard and pointing device are required on the client.
+
+Bootstrap exports `LIBRARY_OFFICE=yes|no` from its add-on prompt. The container
+build retains the image as `:latest` for Yes or `:dontrun` for No. Ordinary
+rebuilds preserve `:dontrun`; exports preserve the selected tag. Startup requires
+`:latest` without `:dontrun`, stops an existing disabled container, and probes
+HTTPS readiness. Run just this block with `--tags craft_apps`. The homepage
+omits Office if its internal service does not respond during page generation.
+
+Host `/Library/documents` is created if absent and bind-mounted at `/documents`.
+Its owner determines PUID/PGID unless overridden; desktop settings live in the
+native `craft-apps-config` volume so exFAT content drives work. New app launches
+use Documents as their working/home folder; Home and File System desktop icons
+are hidden. See the [Office deployment guide](../setup_library/files/containers/craft_apps/README.md).

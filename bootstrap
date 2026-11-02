@@ -137,6 +137,7 @@ show_main_menu() {
     echo -e "  ${GREEN}3)${NC} Restart Install        - Clear boot flags and install from scratch"
     echo -e "  ${GREEN}4)${NC} System Status          - Check installation progress"
     echo -e "  ${GREEN}5)${NC} Install / Repair Clone - Enable cloning in Downloads"
+    echo -e "  ${GREEN}6)${NC} Configure Office      - Enable or disable the optional office apps"
     echo -e "  ${RED}q)${NC} Quit"
     separator
     echo -en "${WHITE}  Select option: ${NC}"
@@ -227,6 +228,27 @@ install_clone_service() {
         return 1
     fi
     msg_ok "Clone is enabled. Refresh Downloads and open Clone."
+}
+
+prompt_office_addon() {
+    msg_info "Optional Office add-on: WordCraft, DeckCraft, and GridCraft in your browser."
+    msg_info "Requires a keyboard AND a pointing device (mouse, touchscreen, or trackpad)."
+    msg_info "Opens over HTTPS. Saves files in /Library/documents on the Library drive."
+    LIBRARY_OFFICE=no
+    if confirm "Enable the Office add-on?"; then
+        LIBRARY_OFFICE=yes
+    fi
+    export LIBRARY_OFFICE
+}
+
+configure_office_addon() {
+    local repository
+    repository=$(resolve_repository) || return 1
+    prompt_office_addon
+    msg_warn "Save open Office documents before applying this setting."
+    confirm "Apply Office setting ($LIBRARY_OFFICE)?" || return 0
+    bash "$repository/setup_library/files/containers/craft_apps/set-enabled.sh" "$LIBRARY_OFFICE" || return 1
+    msg_ok "Office setting saved. Restart the Library to refresh startup and the homepage."
 }
 
 show_display_menu() {
@@ -1180,6 +1202,11 @@ if [[ "$1" == "--install-clone" ]]; then
     exit $?
 fi
 
+if [[ "$1" == "--configure-office" ]]; then
+    configure_office_addon
+    exit $?
+fi
+
 # Interactive mode
 DISP=""
 INSTALL_PASSWORD=""
@@ -1225,6 +1252,7 @@ while true; do
             esac
             separator
             echo
+            prompt_office_addon
             msg_info "Configuration Summary:"
             case "$DISP" in
                 1)       DISP_DESC="TFT 3.5\"" ;;
@@ -1234,6 +1262,7 @@ while true; do
                 *)       DISP_DESC="Unknown" ;;
             esac
             echo -e "  Display: ${CYAN}${DISP_DESC}${NC}"
+            echo -e "  Office add-on: ${CYAN}${LIBRARY_OFFICE}${NC}"
             # echo -e "  Password: ${CYAN}$([ -n "$INSTALL_PASSWORD" ] && echo "Set" || echo "Not set")${NC}"
             echo
             # msg_warn "Running First Boot."
@@ -1257,6 +1286,12 @@ while true; do
         5)
             if ! install_clone_service; then
                 msg_error "Clone setup stopped. Review the error above and retry."
+            fi
+            pause
+            ;;
+        6)
+            if ! configure_office_addon; then
+                msg_error "Office configuration stopped. Review the error above and retry."
             fi
             pause
             ;;

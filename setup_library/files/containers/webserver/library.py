@@ -62,6 +62,9 @@ DEFAULT_CONFIG = {
         {"name": "music_player", "display_name": "iPod-style player",
          "internal_ip": "10.88.0.217", "internal_port": 8080,
          "external_port": 2001, "check_text": "<title>Library Music</title>", "timeout": 5},
+        {"name": "craft_apps", "display_name": "Office",
+         "internal_ip": "10.88.0.218", "internal_port": 3000,
+         "external_port": 3001, "external_scheme": "https", "check_text": "Selkies", "timeout": 5},
         {
             "name": "ebook",
             "display_name": "eBook Reader",
@@ -445,12 +448,17 @@ def configure_nginx(webserver_config, services_config=None):
     # Restrict redirects to configured ports; no JavaScript is needed.
     if services_config is None:
         services_config = DEFAULT_CONFIG["services"]
-    ports = {service_port(webserver_config.get("shutdown_port", 9999))}
-    ports.update(service_port(service["external_port"])
-                 for service in services_config if "external_port" in service)
+    ports = {service_port(webserver_config.get("shutdown_port", 9999)): "$scheme"}
+    for service in services_config:
+        if "external_port" not in service:
+            continue
+        scheme = service.get("external_scheme", "$scheme")
+        if scheme not in ("$scheme", "http", "https"):
+            raise ValueError(f"Invalid service URL scheme: {scheme}")
+        ports[service_port(service["external_port"])] = scheme
     service_redirects = "\n".join(
         f"    location = /services/{port}/ {{\n"
-        f"        return 302 $scheme://$host:{port}/;\n"
+        f"        return 302 {ports[port]}://$host:{port}/;\n"
         "    }"
         for port in sorted(ports)
     )

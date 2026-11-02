@@ -5,6 +5,21 @@ newest first. Dates are commit dates, not versioned release dates. Related commi
 are grouped together; routine housekeeping and documentation-only edits are omitted
 unless they affect installation or use.
 
+## 2026-11-01 — Optional HTTPS Office add-on
+
+- Use only the HTTPS Selkies viewer on port 3001; remove the HTTP noVNC viewer.
+- Ask during bootstrap whether to enable Office and explain that a keyboard plus a mouse, touchscreen, or trackpad is required.
+- Retain declined Office images as `:dontrun`; enabled images use `:latest`. Disabled tags override enabled tags at startup, survive ordinary rebuilds, and retain documents/settings.
+- Add bootstrap's Configure Office option for changing the choice without reinstalling. Omit the Office button when the service is unavailable during homepage generation.
+- Update setup, usage, developer documentation, and the public website source.
+
+## 2026-10-31 — Browser office apps
+
+- Add an optional Podman desktop containing WordCraft, DeckCraft, and GridCraft, accessible through the browser.
+- Create missing `/Library/documents` storage and share it with the apps as `/documents`, with separate persistent desktop settings.
+- Add a plain HTTP noVNC viewer, retain the HTTPS viewer with audio, and simplify the desktop around Documents.
+- Add an HTTP Office link to the Library homepage and startup checks when the image is installed.
+
 ## 2026-10-26 — Clone the operating system or content drive
 
 - **Clone from Downloads:** copy the bootable SD card or `Library_USB` through the browser. File-level copying lets a smaller destination work when it has enough room for the used data plus filesystem overhead. ([ac80fca](https://github.com/holly-the-dude/Library-Creator/commit/ac80fca))

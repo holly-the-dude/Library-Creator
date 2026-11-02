@@ -44,13 +44,17 @@ for dir in */; do
     fi
 
     tarfile="${name}.tar"
+    image="$name"
+    if [[ "$name" == craft_apps ]] && podman image exists localhost/craft_apps:dontrun; then
+        image=localhost/craft_apps:dontrun
+    fi
 
     echo "${BOLD}${CYAN}────────────────────────────────────────────${RESET}"
     echo "${BOLD}${CYAN}📦 Container: ${name}${RESET}"
     echo "${BOLD}${CYAN}────────────────────────────────────────────${RESET}"
 
     # Make sure the image actually exists before trying to save it.
-    if ! podman image exists "${name}"; then
+    if ! podman image exists "${image}"; then
         echo "${RED}  ✗ No image '${name}' found — did you run build_pods.sh?${RESET}"
         failed+=("${name}")
         echo
@@ -69,7 +73,7 @@ for dir in */; do
 
     # Save the image to a tar.
     echo "${YELLOW}➜ Saving '${name}' -> '${tarfile}'...${RESET}"
-    if podman save -o "${tarfile}" "${name}"; then
+    if podman save -o "${tarfile}" "${image}"; then
         echo "${GREEN}  ✓ Successfully saved '${tarfile}'${RESET}"
         saved+=("${name}")
     else

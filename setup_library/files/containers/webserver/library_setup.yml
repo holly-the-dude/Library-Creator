@@ -62,6 +62,16 @@ services:
     check_text: Calibre-Web
     timeout: 10
 
+  - name: craft_apps
+    display_name: Office
+    internal_ip: 10.88.0.218
+    # Probe the internal viewer; browsers connect only through HTTPS.
+    internal_port: 3000
+    external_port: 3001
+    external_scheme: https
+    check_text: "Selkies"
+    timeout: 5
+
   - name: maps
     display_name: OpenStreetMap
     internal_ip: 10.88.0.212

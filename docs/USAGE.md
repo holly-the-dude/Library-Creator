@@ -40,6 +40,7 @@ The home page acts as a hub. Depending on what's installed, you may see:
 | **Wiki** | [Zim File Downloads](https://dumps.wikimedia.org/kiwix/zim/wikipedia/) An offline copy of Wikipedia (and possibly other Kiwix content) | Home page link, or `http://10.1.1.1:6902` |
 | **Music → Music library (LMS)** | Browse your audio library by artist, album, or track | Home page menu, or `http://library/music` |
 | **Music → iPod-style player** | Click-wheel player with Purple and Classic skins | Home page menu, or `http://10.1.1.1:2001` |
+| **Office (optional)** | WordCraft documents, DeckCraft slides, GridCraft spreadsheets; keyboard and pointing device required | Home page link, or `https://10.1.1.1:3001` |
 | **eBook Reader** | Browse, read, and download e-books | Home page link, or `http://10.1.1.1:8083` |
 | **Maps → OpenStreetMap** | Offline interactive maps with a state/region selector, driving directions, and map layers | Home page menu, or `http://10.1.1.1:8080` |
 | **Maps → StreetZim** | Regional map archives with search and navigation, depending on the archive | Home page menu, or `http://10.1.1.1:8093` |
@@ -530,3 +531,18 @@ added. See [DEVELOPERS.md](DEVELOPERS.md).
 
 ** Are there any easter eggs?**
 If you have a tft screen that is touch tap on it in the right sequence or find it in the code
+
+## Browser office apps
+
+When enabled during setup, choose **Office** on the Library homepage or open
+`https://library:3001` (or `https://10.1.1.1:3001` over Library WiFi).
+Office requires **a keyboard and a mouse, touchscreen, or trackpad** on your
+browser device. The self-signed HTTPS certificate may trigger a browser warning. Launch WordCraft, DeckCraft, or GridCraft from the desktop
+inside your browser. Save files in **/documents** (also the Documents shortcut)
+to keep them in `/Library/documents` on the Library server. Documents is the default
+folder for new app launches; the confusing Home and File System desktop icons are
+hidden. The HTTPS viewer supports desktop audio. This is one shared desktop for
+connected users. Office is optional and its button is omitted when the service
+is not running as the homepage is generated. The owner can change the choice
+with bootstrap → **6) Configure Office**, then restart the Library. See the
+[Library Office guide](../setup_library/files/containers/craft_apps/README.md).

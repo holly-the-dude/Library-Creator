@@ -51,6 +51,7 @@
 #                                        mutually exclusive with meshtastic)
 #   data_download  10.88.0.215  :4826 -> container 4286 (when image installed)
 #   street_zim     10.88.0.216  :8093 (shared ZIMs and USB GPS owner when installed)
+#   craft_apps     10.88.0.218  :3001 HTTPS (optional office desktop; :dontrun disables it)
 #
 # NOTE ON MODULE NAMES
 #   All task modules use Fully Qualified Collection Names (FQCN), e.g.
@@ -72,6 +73,9 @@
     # StreetZim owns the receiver; library_maps relays its GPS API. Disable to
     # use the previous maps-owned serial reader, or omit the StreetZim image.
     street_zim_enabled: true
+    # Empty matches the documents folder owner, including root-owned exFAT.
+    craft_puid: ''
+    craft_pgid: ''
 
     # Empty selects the single USB device that answers the Meshtastic protocol.
     # A USB bridge VID or an esptool chip match alone does not identify Meshtastic.
@@ -1231,6 +1235,79 @@
         - name: report optional music player failure
           ansible.builtin.debug:
             msg: "The iPod-style music player did not start. Check podman logs music_player. Library startup will continue."
+
+    - name: manage optional Office add-on
+      tags: [craft_apps]
+      block:
+        - name: check optional Craft office image
+          ansible.builtin.command: podman image exists localhost/craft_apps:latest
+          register: craft_apps_image
+          changed_when: false
+          failed_when: craft_apps_image.rc not in [0, 1]
+
+        - name: check whether Craft office is disabled
+          ansible.builtin.command: podman image exists localhost/craft_apps:dontrun
+          register: craft_apps_disabled
+          changed_when: false
+          failed_when: craft_apps_disabled.rc not in [0, 1]
+
+        - name: stop disabled or unavailable Craft office desktop
+          when: craft_apps_disabled.rc == 0 or craft_apps_image.rc == 1
+          ansible.builtin.command: podman stop --ignore craft_apps
+          register: craft_apps_stopped
+          changed_when: craft_apps_stopped.stdout | length > 0
+
+        - name: start optional Craft office desktop
+          when: craft_apps_image.rc == 0 and craft_apps_disabled.rc == 1
+          block:
+            - name: create missing Craft documents directory
+              ansible.builtin.file:
+                path: /Library/documents
+                state: directory
+
+            - name: discover Craft documents ownership
+              ansible.builtin.stat:
+                path: /Library/documents
+              register: craft_documents
+
+            - name: start Craft office container
+              ansible.builtin.command:
+                argv:
+                  - podman
+                  - run
+                  - -d
+                  - --name=craft_apps
+                  - --replace
+                  - --restart=unless-stopped
+                  - --network=podman
+                  - --ip=10.88.0.218
+                  - --shm-size=1g
+                  - -p
+                  - '3001:3001'
+                  - -e
+                  - 'PUID={{ craft_puid | default(craft_documents.stat.uid, true) }}'
+                  - -e
+                  - 'PGID={{ craft_pgid | default(craft_documents.stat.gid, true) }}'
+                  - -v
+                  - /Library/documents:/documents:rw
+                  - -v
+                  - craft-apps-config:/config:rw
+                  - localhost/craft_apps:latest
+
+            - name: wait for Craft office desktop
+              ansible.builtin.uri:
+                url: https://127.0.0.1:3001/
+                validate_certs: false
+              register: craft_apps_health
+              until: craft_apps_health.status | default(0) == 200
+              retries: 30
+              delay: 2
+          rescue:
+            - name: stop failed Craft office desktop
+              ansible.builtin.command: podman stop --ignore craft_apps
+            - name: report optional Craft office failure
+              ansible.builtin.debug:
+                msg: 'Library Office did not start. Check podman logs craft_apps and /Library/documents permissions. Library startup will continue.'
 
     ###############################
     # E-BOOKS (Calibre-Web) — started only if /Library/calibre has content.

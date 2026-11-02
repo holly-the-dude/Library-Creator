@@ -391,3 +391,25 @@ for upgrading an existing appliance.
 
 See the [downloader guide](../setup_library/files/containers/data_download/README.md#browse-the-zim-library)
 for browsing and updating the downloader on an existing installation.
+
+## Optional browser office apps
+
+Fresh Install and Restart Install ask whether to enable **Office** (WordCraft,
+DeckCraft, and GridCraft). It requires **a keyboard and a pointing device
+(mouse, touchscreen, or trackpad)** on the browser device. The default is No.
+The image is built either way: Yes retains `localhost/craft_apps:latest`; No
+retains `localhost/craft_apps:dontrun` and removes the `:latest` alias.
+`start_library.yml` skips Office when `:dontrun` exists, even if `:latest` also
+exists. Disabled Office does not appear in the generated homepage navigation.
+
+Enabled Office opens at **https://library:3001**, using a self-signed certificate.
+Only HTTPS is published. Startup creates `/Library/documents` if missing and
+mounts it at `/documents`; settings use the `craft-apps-config` volume on native
+storage, including when the content drive is exFAT.
+
+For an existing installation, build/load the `craft_apps` image, deploy the
+updated startup playbook, and rebuild the webserver image. Use bootstrap →
+**6) Configure Office** (or `--configure-office`) to change the choice without
+reinstalling, then restart the Library. Save open documents first. See the
+[Library Office guide](../setup_library/files/containers/craft_apps/README.md)
+for build commands, tag handling, and deployment details.

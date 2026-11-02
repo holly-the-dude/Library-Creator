@@ -27,6 +27,8 @@ class FreshInstallTests(unittest.TestCase):
         stubs = r'''
 show_main_menu() { :; }
 show_display_menu() { :; }
+prompt_office_addon() { LIBRARY_OFFICE=no; }
+configure_office_addon() { echo OFFICE-SETUP; return 0; }
 separator() { :; }
 msg_info() { :; }
 msg_warn() { :; }
@@ -41,6 +43,12 @@ do_first_boot() { printf 'FIRST:%s:%s\n' "$1" "$DISP"; return "${FIRST_STATUS:-0
             stubs += re.search(r'^confirm\(\) \{\n.*?^\}',
                                BOOTSTRAP.read_text(), re.M | re.S).group() + '\n'
         return self.run_shell(stubs + '\nwhile true; do\n' + menu, inputs, **settings)
+
+    def test_office_menu_changes_addon_without_fresh_install(self):
+        result = self.run_menu('6\nq\n')
+        self.assertEqual(result.returncode, 0)
+        self.assertIn('OFFICE-SETUP', result.stdout)
+        self.assertNotIn('FIRST:', result.stdout)
 
     def test_clone_menu_runs_targeted_setup_without_starting_fresh_install(self):
         result = self.run_menu('5\nq\n')

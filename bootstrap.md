@@ -43,6 +43,7 @@ native resolution or an explicitly selected resolution.
 | Restart Install | Clear stage flags and run the same fresh installation from First Boot |
 | System Status | Show stage flags, uptime and whether Ansible is running |
 | Install / Repair Clone | Install the host clone service and recreate the downloader with its socket mount |
+| Configure Office | Ask whether to enable the optional Office apps; retag the installed image without reinstalling |
 
 **USB storage may be erased during First Boot.** The installer prepares a detected
 USB content disk as exFAT with the label `Library_USB` when that label is absent.
@@ -92,6 +93,26 @@ or reboot. Fresh installs include the host service in Second Boot automatically.
 
 See [Clone setup and usage](setup_library/files/containers/data_download/docs/CLONE.md)
 for supported drives and manual installation commands.
+
+## Optional Office add-on
+
+Fresh Install and Restart Install ask **Enable the Office add-on? [y/yes/N]**
+after display selection. WordCraft, DeckCraft, and GridCraft require **a keyboard
+and a pointing device (mouse, touchscreen, or trackpad)** on the browser device.
+They share one desktop at **https://library:3001**, with a self-signed certificate,
+and save in `/documents`, backed by `/Library/documents` on the appliance.
+
+The default No builds/retains `localhost/craft_apps:dontrun` instead of `:latest`.
+Yes keeps `:latest` and removes `:dontrun`. At startup, `:latest` is required and
+`:dontrun` always overrides it. A disabled/missing image stops any old Office
+container; the generated homepage omits Office when the service is unavailable.
+Rebuilds preserve a disabled choice unless a new bootstrap answer overrides it.
+
+On an existing appliance with the updated image, startup playbook, and webserver,
+choose **6) Configure Office** or run `sudo bash /path/to/checkout/bootstrap --configure-office`.
+Save open work before applying the choice and restart the Library afterward to
+refresh startup and the homepage. Documents and settings are retained.
+See the [Office guide](setup_library/files/containers/craft_apps/README.md).
 
 ## Boot stages
 

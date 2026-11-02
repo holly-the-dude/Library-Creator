@@ -1,0 +1,15 @@
+# Browser desktop with the three native office apps; all downloads happen at build time.
+FROM lscr.io/linuxserver/webtop:ubuntu-xfce
+
+ENV TITLE="Library Office" TZ="America/Denver"
+COPY packages.sha256 install-apps.sh /opt/library-office/
+RUN bash /opt/library-office/install-apps.sh
+COPY init-desktop.sh /custom-cont-init.d/50-library-office
+COPY office-app.sh /usr/local/bin/office-app
+COPY desktop-defaults.sh /usr/local/bin/office-desktop-defaults
+RUN for app in wordcraft deckcraft gridcraft; do \
+        ln -s /usr/local/bin/office-app /usr/local/bin/$app; \
+    done && chmod +x /usr/local/bin/office-app /usr/local/bin/office-desktop-defaults \
+        /custom-cont-init.d/50-library-office
+
+EXPOSE 3001
