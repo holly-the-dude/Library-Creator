@@ -157,7 +157,9 @@ ports; select **HTTP** to use the stick attached to the Pi.
 
 Keep access on the trusted Library network: the official radio HTTP API permits
 configuration and messaging without a login. Use the same hostname/IP for the
-page and its HTTP connection; the bridge intentionally has no cross-origin API.
+page and its HTTP connection; the bridge permits cross-origin API access only between `localhost:8086` and
+`127.0.0.1:8086` for the local desktop. Other hostname/IP combinations must match
+the page origin. Arbitrary website origins are not allowed.
 
 On plain LAN HTTP, the official client can fall back to in-memory browser
 storage when its browser database requires a secure context. Do not rely on
