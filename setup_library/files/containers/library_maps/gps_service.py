@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Expose one read-only serial GPS reader to nginx at 127.0.0.1:8765/api/gps.
 
-GPS_PORT selects a receiver explicitly; otherwise read_gps auto-detection is used.
+GPS_PORT selects a receiver explicitly; otherwise only GPS-labelled devices are selected.
+Generic serial adapters are left free for radios unless GPS_PORT names one.
 GPS_BAUD defaults to 9600. No commands are sent to the receiver. This service is
 intended to be proxied by the maps container, rather than exposed directly.
 
@@ -245,7 +246,7 @@ class GPSMonitor:
         try:
             # Use one scan for both selection and the diagnostics device list,
             # avoiding inconsistent lists if USB devices change between scans.
-            port = detect_port(ports)
+            port = detect_port(ports, allow_generic=False)
         except ValueError as exc:
             ambiguous = str(exc).startswith("Multiple possible GPS devices")
             self.state.scanned(ports, ambiguous, None)

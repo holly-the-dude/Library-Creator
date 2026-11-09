@@ -277,3 +277,12 @@ The copied GPS modules retain the repository's BSD license in `gps/LICENSE`.
 They are intentionally independent copies; later changes in `library_maps`
 are not automatically incorporated here. GPS parsing and state tests copied
 from Maps run alongside the reader's own tests.
+
+### GPS and radio serial-port ownership
+
+The background GPS reader automatically opens only GPS/GNSS-labelled receivers.
+A lone generic CP2102/CH340 serial adapter may be a Meshtastic radio and is not
+automatically opened. For a GPS connected through a generic USB UART adapter,
+set `GPS_PORT` to its explicit device or stable `/dev/serial/by-id/` path.
+Do not point GPS_PORT at a radio used by Meshtastic or Meshflash. The manually
+invoked `read_gps.py` CLI retains its single-USB-device fallback.

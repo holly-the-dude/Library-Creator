@@ -145,11 +145,12 @@ def available_ports() -> List[Tuple[str, str, bool]]:
     return sorted(ports.values())
 
 
-def detect_port(ports: Optional[List[Tuple[str, str, bool]]] = None) -> str:
+def detect_port(ports: Optional[List[Tuple[str, str, bool]]] = None, *, allow_generic=True) -> str:
     """Choose an unambiguous GPS or USB serial device without opening ports.
 
     Supply an existing available_ports() result to reuse the service's discovery
-    snapshot. None performs a fresh scan; an empty list means that scan found no
+    snapshot. Background services pass allow_generic=False to avoid claiming radios.
+    None performs a fresh scan; an empty list means that scan found no
     devices and must not trigger another scan. Selection identifies a candidate,
     not proof of NMEA output; the reader validates the incoming sentences.
     """
@@ -158,10 +159,13 @@ def detect_port(ports: Optional[List[Tuple[str, str, bool]]] = None) -> str:
     gps_names = r"gps|gnss|u[ -]?blox|vk[ -]?172|g[ -]?mouse"
     candidates = [device for device, description, _ in ports
                   if re.search(gps_names, f"{device} {description}", re.IGNORECASE)]
-    if not candidates:
+    if not candidates and allow_generic:
         candidates = [device for device, _, is_usb in ports if is_usb]
     if len(candidates) == 1:
         return candidates[0]
+    if not candidates and not allow_generic:
+        raise ValueError("No GPS-labelled receiver found. For a generic USB GPS adapter, set --port DEVICE; "
+                         "automatic GPS services leave unidentified serial devices free for radios.")
     if not candidates:
         raise ValueError("No USB GPS/serial device found. Connect the receiver or use "
                          "--list-ports and --port DEVICE.")

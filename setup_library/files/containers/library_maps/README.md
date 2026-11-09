@@ -364,3 +364,12 @@ GraphHopper image alongside the other services, including Meshtastic and meshfla
 Use rootful Podman consistently for appliance builds and startup. See the
 [developer guide](../../../../docs/DEVELOPERS.md#container-build-pipeline) for exports;
 the top-level tar-export loop does not include the nested GraphHopper image.
+
+### GPS and radio serial-port ownership
+
+The background GPS reader automatically opens only GPS/GNSS-labelled receivers.
+A lone generic CP2102/CH340 serial adapter may be a Meshtastic radio and is not
+automatically opened. For a GPS connected through a generic USB UART adapter,
+set `GPS_PORT` to its explicit device or stable `/dev/serial/by-id/` path.
+Do not point GPS_PORT at a radio used by Meshtastic or Meshflash. The manually
+invoked `read_gps.py` CLI retains its single-USB-device fallback.

@@ -178,14 +178,24 @@ class MonitorTests(unittest.TestCase):
                                             ("/dev/b", "USB serial", True)]
         self.assertIsNone(self.monitor.scan())
         state = self.state.snapshot()
-        self.assertTrue(state["detected"])
+        self.assertFalse(state["detected"])
         self.assertFalse(state["connected"])
-        self.assertEqual(state["status"], "ambiguous")
+        self.assertEqual(state["status"], "no_device")
         self.assertEqual(len(state["ports"]), 2)
         self.monitor.port_lister = lambda: []
         self.assertIsNone(self.monitor.scan())
         self.assertEqual(self.state.snapshot()["status"], "no_device")
         self.assertFalse(self.state.snapshot()["detected"])
+
+    def test_background_service_does_not_claim_lone_radio(self):
+        radio = [("/dev/ttyUSB0", "Silicon Labs CP2102 USB to UART Bridge Controller", True)]
+        self.monitor.port_lister = lambda: radio
+        self.assertIsNone(self.monitor.scan())
+        self.assertFalse(self.state.snapshot()["connected"])
+        # The intentionally invoked CLI retains its single-port convenience.
+        self.assertEqual(detect_port(radio), "/dev/ttyUSB0")
+        self.monitor.port = "/dev/ttyUSB0"
+        self.assertEqual(self.monitor.scan(), "/dev/ttyUSB0")
 
     def test_explicit_port_resolves_ambiguity_and_reports_missing_receiver(self):
         self.monitor.port = "/dev/b"
