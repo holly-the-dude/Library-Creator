@@ -1,5 +1,5 @@
 # TODO
-
+- [X] load files from local computer macos,win,debian,redhat
 - [ ] GUI file and folder deletion.
 - [X] Satellite imagery download.
 - [X] Add optional office like apps 
