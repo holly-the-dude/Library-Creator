@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+      no_cache: true
     image: localhost/craft_apps:latest
     container_name: craft_apps
     environment:

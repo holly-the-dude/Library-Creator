@@ -436,6 +436,21 @@
       ansible.builtin.debug:
         var: shellmount.stdout_lines
 
+    - name: check for standalone downloader files on Library USB
+      ansible.builtin.stat:
+        path: /Library/downloader
+      register: standalone_downloader
+      become: true
+
+    - name: copy standalone downloader files to Library USB when missing
+      ansible.builtin.copy:
+        src: /root/install/setup_library/files/data_downloader/
+        dest: /Library/downloader/
+        remote_src: true
+        mode: preserve
+      when: not standalone_downloader.stat.exists
+      become: true
+
     # Defensive: recreate the standard content folders in case they were
     # deleted or renamed. Errors are ignored (folders may already exist).
     - name: force create incase some idiot deleted the folders or renamed

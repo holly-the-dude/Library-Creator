@@ -103,6 +103,13 @@ const PLAYER_SKIN_STYLES = `
   /* The 200px reflection extends over the caption/rescan area. It is decorative
      in BOTH skins and must not intercept pointer events on those controls. */
   :host .music-player-shadow-inner::before { pointer-events: none; }
+  /* Progress and volume share a sliding, double-width row. Explicitly clip its
+     paint as well as overflow so Safari cannot show the off-screen control
+     through the translucent LCD while the row moves or playback updates. */
+  :host .music-player .now-playing {
+    overflow: hidden;
+    clip-path: inset(0);
+  }
   :host([data-skin="purple"]) .music-player .music-player-container {
     background: radial-gradient(ellipse at 15% 0%, #9860a8 0%, transparent 38%),
       linear-gradient(115deg, #48234f 0%, #301836 45%, #552b60 83%, #28132d 100%);

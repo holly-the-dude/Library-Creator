@@ -71,7 +71,7 @@ for dir in */; do
             fi
         fi
         case "$office_choice" in yes|no) ;; *) echo 'LIBRARY_OFFICE must be yes or no.' >&2; exit 1 ;; esac
-        if podman build --format docker -t "$tag" -f "${dir}${containerfile}" "$dir" &&
+        if podman build --no-cache --format docker -t "$tag" -f "${dir}${containerfile}" "$dir" &&
                 bash "${dir}set-enabled.sh" "$office_choice"; then
             if [[ "$office_choice" == no ]]; then tag=localhost/craft_apps:dontrun; fi
             built+=("$tag")

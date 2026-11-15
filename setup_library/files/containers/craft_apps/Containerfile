@@ -2,7 +2,7 @@
 FROM lscr.io/linuxserver/webtop:ubuntu-xfce
 
 ENV TITLE="Library Office" TZ="America/Denver"
-COPY packages.sha256 install-apps.sh /opt/library-office/
+COPY install-apps.sh /opt/library-office/
 RUN bash /opt/library-office/install-apps.sh
 COPY init-desktop.sh /custom-cont-init.d/50-library-office
 COPY office-app.sh /usr/local/bin/office-app

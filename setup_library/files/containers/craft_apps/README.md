@@ -25,7 +25,7 @@ symlinks and Unix permissions used by a Linux desktop.
 Run on the Library appliance from this directory:
 
 ```bash
-sudo podman build --format docker -t localhost/craft_apps:latest -f Containerfile .
+sudo podman build --no-cache --format docker -t localhost/craft_apps:latest -f Containerfile .
 sudo bash start.sh
 ```
 
@@ -94,11 +94,18 @@ regenerate pages with `podman exec <webserver-container> python3 /root/library.p
 or restart the Library. The navigation is generated at startup, not polled live.
 
 Internet access is needed to build the image, not to use the installed apps.
-The image pins WordCraft 0.13.2, DeckCraft 0.13.1, and GridCraft 0.14.2 and verifies
-their packages against checked-in upstream SHA-256 checksums. Builds support
-ARM64 and x86-64; build on the same architecture as the destination. To upgrade,
-update the versions in `install-apps.sh` and their hashes in `packages.sha256`,
-then rebuild and restart after saving open documents.
+Each image build downloads the latest stable GitHub release of WordCraft,
+DeckCraft, and GridCraft for the build architecture and verifies each package
+against its release asset's SHA-256 digest. Missing packages, missing digests,
+and download failures stop the build. Installed release tags and checksums are
+recorded in `/usr/local/share/library-office/releases.txt` and `packages.sha256`
+inside the image. The checked-in legacy `packages.sha256` is no longer used.
+Builds support ARM64 and x86-64; build on the destination architecture.
+`build_pods.sh` and Compose disable the build cache for Office so reinstalling
+checks upstream again. For manual builds, keep the `--no-cache` flag shown above.
+To upgrade an existing installation, rebuild and restart after saving open
+documents. Restarting alone uses the already installed versions; apps remain
+available offline after building.
 
 This is one shared desktop session, not separate accounts for each browser user.
 It is configured for the Library's trusted local network, without a login.
