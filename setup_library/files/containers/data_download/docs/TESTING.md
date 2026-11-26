@@ -38,8 +38,9 @@ read-only mount is required. The image working directory makes `app` and
 
 ## Coverage
 
-`tests/test_streetzim.py` checks regional card metadata, unsafe URL rejection,
-empty catalog errors, exact Internet Archive metadata, and transfer verification
+`tests/test_streetzim.py` checks regional card metadata, proxy `data-fallback`
+links, deduplication with direct downloads, unsafe URL rejection, empty catalog
+errors, exact Internet Archive metadata, and transfer verification
 against the ZIM signature and MD5. `test_zim_ui.cjs` also checks the separate
 StreetZim tab, region search, save destination and restart instructions.
 

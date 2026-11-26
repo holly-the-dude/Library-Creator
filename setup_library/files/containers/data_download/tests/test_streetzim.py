@@ -14,16 +14,19 @@ import sources
 from test_downloader import Response
 
 URL = 'https://archive.org/download/streetzim-colorado/osm-colorado-2026-10-25.zim'
+PROXY_URL = ('https://streetzim-build-proxy.tiltastech.workers.dev/merged/'
+             'colorado-viewer/en/fixture/osm-colorado-2026-10-25.v0bae64f1.zim')
 
 
-def card(url=URL):
+def card(url=URL, fallback=None):
+    fallback_attribute = f' data-fallback="{fallback}"' if fallback is not None else ''
     return f'''<div class="map-card"><div class="map-card-head">
       <div class="map-card-title">Colorado &amp; mountains</div>
       <div class="map-card-size">841 MB</div></div>
       <time datetime="2026-10-25">25 Oct</time>
       <p class="map-card-desc">Roads and <strong>places</strong></p>
       <span class="map-badge badge-nav">Routing &amp; Directions</span>
-      <div class="map-card-links"><a href="{url}">Download</a>
+      <div class="map-card-links"><a href="{url}"{fallback_attribute}>Download</a>
       <a href="/drive/?zim={url}">Preview</a><a href="/torrents/colorado.torrent">Torrent</a></div></div>'''
 
 
@@ -45,6 +48,21 @@ class StreetZimTests(unittest.TestCase):
         self.assertTrue(row['size_is_approximate'])
         self.assertEqual(row['size'], 841 * 1024 ** 2)
 
+    def test_proxy_fallbacks_share_archive_identity_and_preserve_metadata(self):
+        direct = sources.parse_streetzim_catalog(card())
+        proxy = sources.parse_streetzim_catalog(card(PROXY_URL, fallback=URL))
+        self.assertEqual(proxy, direct)
+        other = 'https://archive.org/download/streetzim-utah/osm-utah.zim'
+        rows = sources.parse_streetzim_catalog(
+            card(PROXY_URL, fallback=URL) + card() + card(other))
+        self.assertEqual({row['url'] for row in rows}, {URL, other})
+        self.assertEqual(len(rows), 2)
+
+    def test_valid_direct_download_takes_precedence_over_fallback(self):
+        other = 'https://archive.org/download/streetzim-utah/osm-utah.zim'
+        rows = sources.parse_streetzim_catalog(card(fallback=other))
+        self.assertEqual([row['url'] for row in rows], [URL])
+
     def test_rejects_preview_foreign_and_unsafe_download_urls(self):
         for url in ['http://archive.org/download/streetzim-colorado/a.zim',
                     'https://archive.org.evil.test/download/streetzim-colorado/a.zim',
@@ -55,6 +73,9 @@ class StreetZimTests(unittest.TestCase):
                     URL + '?download=1', URL + '.torrent']:
             with self.subTest(url=url):
                 self.assertEqual(sources.parse_streetzim_catalog(card(url)), [])
+                self.assertEqual(sources.parse_streetzim_catalog(
+                    card(PROXY_URL, fallback=url)), [])
+        self.assertEqual(sources.parse_streetzim_catalog(card(PROXY_URL)), [])
 
     def test_discovery_and_empty_catalog_failure(self):
         rows = []
@@ -77,7 +98,7 @@ class StreetZimTests(unittest.TestCase):
 
     def test_stream_uses_exact_metadata_and_verifies_zim_and_md5(self):
         body = b'ZIM\x04' + b'archive fixture' * 20
-        row = sources.parse_streetzim_catalog(card())[0]
+        row = sources.parse_streetzim_catalog(card(PROXY_URL, fallback=URL))[0]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'download.part'
             storage = app.Storage(Path(directory), require_mount=False, reserve=0)

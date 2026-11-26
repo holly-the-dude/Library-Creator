@@ -103,7 +103,7 @@ failures propagate to the application, which records a source error.
 | Maps | GitHub contents API for the configured repository's `pmtiles` directory | Entries below 1 KiB are resolved as LFS pointers; their actual size and SHA-256 accompany a GitHub media download URL |
 | Routing | Parse current US regional Geofabrik PBF links; HEAD each file and fetch its MD5 sidecar | Exact Content-Length and MD5; a local SHA-256 receipt is saved after verification |
 | Kiwix ZIM Library | Parse OPDS v2 in 500-entry pages, using totalResults/startIndex | Advertised byte length (possibly rounded to KiB); titles, descriptions, languages, collection, date, flavour, and tags |
-| StreetZim | Parse regional cards at streetzim.web.app; accept direct HTTPS archive.org ZIM links | Approximate catalog size; exact size and MD5 resolved from Internet Archive metadata before transfer |
+| StreetZim | Parse regional cards at streetzim.web.app; accept direct HTTPS archive.org ZIM links from `href` or a proxy button's `data-fallback` | Approximate catalog size; exact size and MD5 resolved from Internet Archive metadata before transfer |
 | Survivor Library | Find same-site `library-*` category pages, then their ZIP links | Sizes remain `None` until transfer; rounded MB labels are not treated as exact byte counts |
 
 `StreetZimCards` preserves titles, descriptions, dates and feature labels.

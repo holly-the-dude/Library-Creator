@@ -220,12 +220,16 @@ class StreetZimCards(HTMLParser):
                 return
             self.card = {"url": "", "date": ""}
         if tag == "a":
-            url = attrs.get("href", "")
-            try:
-                streetzim_location(url)
+            # Proxy downloads advertise the original Archive ZIM separately.
+            # Keep using that file so its exact size and MD5 can be verified.
+            for attribute in ("href", "data-fallback"):
+                url = attrs.get(attribute, "")
+                try:
+                    streetzim_location(url)
+                except ValueError:
+                    continue
                 self.card["url"] = url
-            except ValueError:
-                pass
+                break
         if tag == "time":
             self.card["date"] = attrs.get("datetime", "")[:10]
         if tag not in {"br", "hr", "img", "input", "meta", "link", "source", "wbr"}:
